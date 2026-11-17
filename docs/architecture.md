@@ -19,6 +19,7 @@ Hooks and native calls are enabled only for that exact executable. Addresses bel
 | Operation | RVA |
 |---|---|
 | BonePhysicsModule.CreateJobData | `0x18B96D0` |
+| Per-character environment wind update | `0x5FC130` |
 | BonePhysicsModule.Load | `0x18B9800` |
 | Chain pose construction | `0x1BE66E0` |
 | Chain finalization | `0x1BE7560` |
@@ -28,11 +29,19 @@ Hooks and native calls are enabled only for that exact executable. Addresses bel
 
 The loader reads parsed simulator descriptors (104 bytes), parsed chain descriptors (56 bytes), and PHYB node records (84 bytes). The plugin creates private descriptor copies, modifies only the selected ear/tail records, and reuses the game's native constructors/solver. Missing standard cat-ear simulators are constructed from explicit parameters. There are no third-party asset blobs in the assembly.
 
-Replacement occurs before the module enqueues the current frame's physics jobs. A real resource reference is acquired first; native Load releases the module's old reference and builds from a private, non-owning view. The view has a nonzero synthetic reference count so the native acquire path never resolves it through the resource cache. Immediately after Load returns, the module's resource handle is restored to the real handle, adopting the held reference. The fabricated handle never becomes a native destructor's owner. Private descriptor storage is kept until replacement/restoration.
+Replacement runs at the local character's native environment-wind callback, before its original wind computation. CreateJobData remains a fallback before enqueuing physics jobs. The wind callback has five arguments: controller, actor context, live draw object, float delta and byte flags. The draw argument must equal the captured local player's draw; the live module and skeleton owner must agree. Other characters pass directly to the original function. A real resource reference is acquired first; native Load releases the module's old reference and builds from a private, non-owning view. The view has a nonzero synthetic reference count so the native acquire path never resolves it through the resource cache. Immediately after Load returns, the module's resource handle is restored to the real handle, adopting the held reference. The fabricated handle never becomes a native destructor's owner. Private descriptor storage is kept until replacement/restoration.
 
 This ownership scheme was checked against local loader/acquire/unload disassembly. **It has not yet been exercised in-game.** Count/name validation and executable gating reduce accidental misuse; they do not establish runtime safety or visual equivalence.
 
 No original animation is replaced. Animation attraction, native wind processing, chain lengths, and bone writeback remain in the original solver. Tail motion parameters reproduce the local v0.2.3 / combined v1.1.1 tuning. Terminal attraction retains the race-specific lower native limit. Ear strength and tail strength are independent.
+
+### 0.1.2 takeover and wind handoff
+
+The reported 0.1.1 state was still waiting, with no preview and zero queries/contacts. That establishes that the successful replacement path had not been reached; it does not establish which native callback/ownership condition failed. The additional wind entry addresses dependence on one job callback, with counters exposing both routes. It remains a candidate fix pending in-game verification.
+
+Local disassembly independently confirms that Load writes the descriptor's fixed wind into new simulators at `0x18BA216–0x18BA222`. The native per-character routine writes live environment wind at `0x5FC357–0x5FC361` and module wind settings at `0x5FC3E6–0x5FC3EF`, skips inactive simulators and includes group-dependent variation. Therefore late replacement loses that frame's input; this alone does not explain an indefinitely waiting plugin. Before replacement, the plugin snapshots slot-0 input at simulator `+0x40` and smoothed wind at `+0x430`, then restores finite values to matching indices/groups (including the explicit tail 14↔142 contact remap). No pointers, clocks, velocities, animation controls or global weather are copied. Appended ear simulators are left for the native wind update. The original wind callback always runs and continues to supply changing wind; no frozen substitute or synthetic oscillation is added.
+
+Each owned boundary refreshes the current tail-chain binding instead of assuming a previously cached chain survives native rebuilds. First-simulator identity also participates in resource replacement detection when vector storage is reused. The settings expose entry, application, tail-update and contact counters plus the last contact prerequisite. UI diagnostics consume managed values, not native pointers. No new native calls have been game-tested in 0.1.2.
 
 For a standard tail with terrain/scene contact enabled, the simulator group becomes 142, outside the animation controller's locally observed group-stop range. This follows the already tested Mod fix for seated/lying poses. It is an ordinary group number, not a special high-bit flag. The native flat-ground flag is cleared for this path, because plugin terrain queries replace it.
 

@@ -67,6 +67,7 @@ unsafe partial class Program
         TestProfiles();
         TestNodeContacts();
         TestPreviewGeometry();
+        TestRuntimeBindingAndWind();
         int cases=0;
         if(args.Length>0)
         {
@@ -115,6 +116,12 @@ unsafe partial class Program
         Assert(!contacts.Resolve(chain,state,new Settings(),1),"No query when collisions disabled");
         Assert(new ReadOnlySpan<byte>(particles,5*96).SequenceEqual(before),"Disabled contact preserves native particles");
         Assert(!contacts.Resolve(chain,state,new Settings{GroundCollision=true},0),"Missing scene handled");
+        Assert(state.LastResult == "等待场景碰撞模块", "Zero-query scene failure is exposed");
+        var queries = contacts.Queries;
+        *(Vector3*)(particles + 96 + 0x40) = new(float.NaN, 0, 0);
+        Assert(!contacts.Resolve(chain,state,new Settings{GroundCollision=true},1), "Reject invalid target length before native query");
+        Assert(contacts.Queries == queries, "Invalid target length issues no collision calls");
+        Assert(state.LastResult == "尾骨段长度尚未有效初始化", "Zero-query length failure is exposed");
         GC.KeepAlive(ray);GC.KeepAlive(sweep);
     }
     static void CompareChains(byte* actual,byte* expected)

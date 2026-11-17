@@ -3,7 +3,7 @@
     "Author": "pascalial98-hue",
     "Name": "耳尾物理增强 · Ear & Tail Physics",
     "InternalName": "EarTailPhysics",
-    "AssemblyVersion": "0.1.1.0",
+    "AssemblyVersion": "0.1.2.0",
     "DalamudApiLevel": 15,
     "ApplicableVersion": "any",
     "Punchline": "独立耳尾物理：保留动画、独立档位、试验性场景碰撞",
@@ -22,14 +22,14 @@
     "CanUnloadAsync": false,
     "LoadPriority": 0,
     "AcceptsFeedback": false,
-    "DownloadLinkInstall": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.1.0/EarTailPhysics.zip",
-    "DownloadLinkUpdate": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.1.0/EarTailPhysics.zip",
-    "DownloadLinkTesting": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.1.0/EarTailPhysics.zip",
-    "TestingAssemblyVersion": "0.1.1.0",
+    "DownloadLinkInstall": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.2.0/EarTailPhysics.zip",
+    "DownloadLinkUpdate": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.2.0/EarTailPhysics.zip",
+    "DownloadLinkTesting": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.2.0/EarTailPhysics.zip",
+    "TestingAssemblyVersion": "0.1.2.0",
     "TestingDalamudApiLevel": 15,
     "IsHide": false,
     "IsTestingExclusive": false,
-    "LastUpdate": 1794885806,
-    "Changelog": "五个尾巴节点独立调半径，尾根／靠根分别可取消保护，新增碰撞体预览；修正碰撞处理时机。耳尾预设不变，仅影响自身。离线检查通过，游戏内待验证。"
+    "LastUpdate": 1794891097,
+    "Changelog": "针对始终等待、无风摆与碰撞查询为 0 增加角色环境风接管入口，衔接实时风输入并刷新尾链绑定，新增运行状态排查。保留旧 Mod 风强度与耳尾惯性参数。离线检查通过，接管和碰撞仍待游戏实测。"
   }
 ]

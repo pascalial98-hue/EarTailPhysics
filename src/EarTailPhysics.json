@@ -2,7 +2,7 @@
   "Author": "pascalial98-hue",
   "Name": "耳尾物理增强 · Ear & Tail Physics",
   "InternalName": "EarTailPhysics",
-  "AssemblyVersion": "0.1.1.0",
+  "AssemblyVersion": "0.1.2.0",
   "DalamudApiLevel": 15,
   "ApplicableVersion": "any",
   "Punchline": "独立耳尾物理：保留动画、独立档位、试验性场景碰撞",

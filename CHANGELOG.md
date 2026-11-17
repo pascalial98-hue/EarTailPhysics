@@ -1,3 +1,13 @@
+# 0.1.2.0 — 2026-11-17
+
+- Candidate fix for remaining in waiting state with no wind, collision preview or queries: apply through the local character's native environment-wind callback as well as the existing job-creation fallback.
+- Preserve live wind input and smoothing during descriptor replacement; always continue the game's original environment-wind calculation. Old Mod wind coefficients, animation attraction, damping and inertia presets are unchanged.
+- Rebind the live tail chain after native replacement, including reused simulator-vector storage. Keep ownership restricted to the local player.
+- Add readable runtime status: local character/scene availability, both entry counters, applied count, tail callbacks, wind input and contact prerequisite failures.
+- Release build and managed checks pass, including 576 old Mod parameter comparisons and new ownership, wind-handoff and chain-rebinding checks.
+
+This is a diagnostic installation test release. The reported waiting failure has not been reproduced with a live game; takeover, wind and scene contacts still require in-game confirmation. Mesh compression is not included.
+
 # 0.1.1.0 — 2026-11-17
 
 - Five independently adjustable tail contact radii: root b, proximal c, middle d, rear e and virtual tip; 0 disables a node's direct terrain/scene contact.

@@ -48,7 +48,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!open) return;
         ImGui.SetNextWindowSize(new Vector2(530, 0), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("耳尾物理增强 · 0.1.1 测试版", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.Begin("耳尾物理增强 · 0.1.2 测试版", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         { ImGui.End(); return; }
         try
         {
@@ -101,7 +101,19 @@ public sealed class Plugin : IDalamudPlugin
             ImGui.Separator();
             ImGui.TextWrapped(runtime.Status);
             if (cfg.GroundCollision || cfg.SceneCollision)
+            {
                 ImGui.TextUnformatted($"场景查询 {runtime.Queries} 次 · 发生接触 {runtime.Contacts} 次");
+                ImGui.TextWrapped(runtime.ContactStatus);
+            }
+            if (ImGui.CollapsingHeader("运行状态（排查）"))
+            {
+                ImGui.TextUnformatted($"自身角色 {(runtime.LocalCharacterFound ? "已找到" : "等待")} · 场景模块 {(runtime.SceneAvailable ? "已找到" : "等待")}");
+                ImGui.TextUnformatted($"环境风入口 {runtime.WindCallbacks} 次（自身 {runtime.LocalWindCallbacks}）");
+                ImGui.TextUnformatted($"任务入口 {runtime.JobCallbacks} 次（自身 {runtime.LocalJobCallbacks}）· 已应用 {runtime.Rebuilds} 次");
+                ImGui.TextWrapped(runtime.TailStatus);
+                ImGui.TextUnformatted($"尾链更新 {runtime.TailPoseCallbacks} 次 · 原生风输入 {runtime.TailWind:F3}");
+                ImGui.TextWrapped("风输入由游戏环境决定，不是强度档位。若仍停在等待，请记录这里的状态以便定位。");
+            }
             ImGui.TextWrapped("首版仅作用于自身。支持标准尾链及猫耳骨骼；额外骨链与任意模型自动适配尚未提供。");
             ImGui.TextWrapped("物理设置在下一次角色物理更新时应用。首次测试请先对比原动画、跑停和转身，再打开碰撞。");
             if (ImGui.Button("重新应用设置")) runtime.Configure(cfg, true);

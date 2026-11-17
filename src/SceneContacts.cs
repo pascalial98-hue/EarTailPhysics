@@ -29,6 +29,7 @@ public unsafe sealed class SceneContacts
         public Settings? FrameSettings;
         public Vector3 Root;
         public bool Initialized;
+        public string LastResult = "等待尾链物理回调";
     }
     private readonly RayDelegate ray;
     private readonly SweepDelegate sweep;
@@ -43,21 +44,23 @@ public unsafe sealed class SceneContacts
     {
         Array.Clear(state.SpatialSweeps);
         Array.Clear(state.Normals);
-        if (bgModule == 0 || (!cfg.GroundCollision && !cfg.SceneCollision)) return false;
+        if (!cfg.GroundCollision && !cfg.SceneCollision) { state.LastResult = "地面／场景碰撞未开启"; return false; }
+        if (bgModule == 0) { state.LastResult = "等待场景碰撞模块"; return false; }
         if (cfg.GetContactRadius(0) == 0 && cfg.GetContactRadius(1) == 0 && cfg.GetContactRadius(2) == 0
             && cfg.GetContactRadius(3) == 0 && cfg.GetContactRadius(4) == 0)
-        { state.Initialized = false; return false; }
-        if (*(ushort*)(chain + 0xE8) != 5) return false;
+        { state.Initialized = false; state.LastResult = "所有接触节点均为保护或半径 0"; return false; }
+        if (*(ushort*)(chain + 0xE8) != 5) { state.LastResult = "尾链节点数不支持"; return false; }
         var particles = *(byte**)(chain + 0x20);
-        if (particles == null) return false;
+        if (particles == null) { state.LastResult = "等待尾链粒子初始化"; return false; }
         // Native particle targets are world-oriented, relative to the current skeleton translation.
         var root = *(Vector3*)((byte*)state.Module + 0x40);
-        if (!ContactMath.Finite(root)) return false;
+        if (!ContactMath.Finite(root)) { state.LastResult = "角色位置无效，跳过接触"; return false; }
         var reset = !state.Initialized || Vector3.DistanceSquared(root, state.Root) > 4;
         for (var i = 0; i < 5; i++)
         {
             var p = *(Vector3*)(particles + i * 96) + root;
-            if (!ContactMath.Finite(p) || Vector3.DistanceSquared(p, root) > 100) return false;
+            if (!ContactMath.Finite(p) || Vector3.DistanceSquared(p, root) > 100)
+            { state.LastResult = "尾节点位置超出有效范围"; return false; }
             state.Points[i] = p;
             state.Normals[i] = Vector3.Zero;
             if (reset) state.Previous[i] = p;
@@ -66,7 +69,8 @@ public unsafe sealed class SceneContacts
                 var t = *(Vector3*)(particles + i * 96 + 0x40);
                 var parent = *(Vector3*)(particles + (i - 1) * 96 + 0x40);
                 state.Lengths[i - 1] = Vector3.Distance(t, parent);
-                if (state.Lengths[i - 1] is < .0001f or > 3) return false;
+                if (!float.IsFinite(state.Lengths[i - 1]) || state.Lengths[i - 1] is < .0001f or > 3)
+                { state.LastResult = "尾骨段长度尚未有效初始化"; return false; }
             }
         }
         int* flags = stackalloc int[] { 0x4000, 0, 0x4000, 0 };
@@ -143,6 +147,7 @@ public unsafe sealed class SceneContacts
         // temporal sweep must start at the actual particle position, not that unused candidate.
         for (var i = 0; i < 5; i++) state.Previous[i] = *(Vector3*)(particles + i * 96) + root;
         state.Root = root; state.Initialized = true;
+        state.LastResult = any ? "已发生接触修正" : "正在检测，当前未发生接触修正";
         return any;
     }
 
