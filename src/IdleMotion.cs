@@ -10,6 +10,8 @@ public sealed record IdleMotionFrame(double Time, Vector2 Middle, Vector2 Rear, 
 {
     public static readonly IdleMotionFrame Empty = new(0, default, default, default, default, default, "随机小动作已关闭");
     public float TailDrive { get; init; }
+    public float TailDriveLimit { get; init; } = .04f;
+    public float TailJointLimit { get; init; } = .5f;
     public bool HasMotion => Middle != default || Rear != default || Tip != default || LeftEar != default || RightEar != default;
 }
 
@@ -70,14 +72,41 @@ public sealed class IdleMotion(int? seed = null)
         var middle = Vector2.Zero; var rear = Vector2.Zero; var tip = Vector2.Zero;
         var tailDrive = 0f;
         var left = Vector2.Zero; var right = Vector2.Zero;
-        var tailScale = tailType == 1 ? .85f : tailType == 2 ? .7f : 1;
+        var tailScale = tailType == 2 ? .7f : 1;
         if (tail.Kind >= 0 && weight > 0)
         {
             var t = (float)((now - tail.Start) / tail.Duration);
             var a = tail.Amplitude * weight * tailScale;
             tailDrive = Pulse(t) * weight;
             // Values are incremental joint angles: root and proximal target stay fixed.
-            switch (tail.Kind)
+            if (tailType == 1)
+            {
+                // Thick fur hides small tip-only motion. Carry each action from the
+                // middle, and include pitch so an upright tail also visibly moves.
+                // Single smooth arcs return once, without adding an oscillation train.
+                var arc = Pulse(t) * a;
+                var rearArc = Pulse((t - .06f) / .94f) * a;
+                var tipArc = Pulse((t - .12f) / .88f) * a;
+                switch (tail.Kind)
+                {
+                    case 0:
+                        middle = new(tail.Sign * .62f * arc, .28f * arc);
+                        rear = new(tail.Sign * .34f * rearArc, .20f * rearArc);
+                        tip = new(tail.Sign * .20f * tipArc, .12f * tipArc);
+                        break;
+                    case 1:
+                        middle = new(tail.Sign * .20f * arc, .35f * arc);
+                        rear = new(tail.Sign * .10f * rearArc, .45f * rearArc);
+                        tip = new(tail.Sign * .10f * tipArc, .28f * tipArc);
+                        break;
+                    case 2:
+                        middle = new(tail.Sign * .58f * arc, .30f * arc);
+                        rear = new(tail.Sign * .38f * rearArc, .22f * rearArc);
+                        tip = new(tail.Sign * .22f * tipArc, .14f * tipArc);
+                        break;
+                }
+            }
+            else switch (tail.Kind)
             {
                 case 0: // a slow side glance, then a softer return through centre
                     middle = new(tail.Sign * .36f * Sway(t) * a, .09f * Pulse(t) * a);
@@ -112,7 +141,12 @@ public sealed class IdleMotion(int? seed = null)
         }
         var status = !eligible ? weight > 0 ? "移动／转身，正在淡出" : "等待静止"
             : tail.Kind >= 0 || ears.Kind >= 0 ? Describe(tail.Kind, ears.Kind) : "静止中，等待下一次随机动作";
-        return new(now, middle, rear, tip, left, right, status) { TailDrive = tailDrive };
+        return new(now, middle, rear, tip, left, right, status)
+        {
+            TailDrive = tailDrive,
+            TailDriveLimit = tailType == 1 ? .12f : .04f,
+            TailJointLimit = tailType == 1 ? .85f : .5f,
+        };
     }
 
     private void Advance(Channel channel, double now, bool enabled, bool canStart, float durationScale, bool isTail)

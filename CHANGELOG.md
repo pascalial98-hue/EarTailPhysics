@@ -1,3 +1,13 @@
+# 0.1.6.0 — 2026-11-17
+
+- Give fluffy/fox tails dedicated, broader idle arcs after feedback that 0.1.5 remained too subtle. Remove the 0.85 amplitude reduction; every event now includes middle-node movement and stronger pitch so upright tails respond visibly in target space.
+- Stagger rear/tip curves slightly behind the middle, returning once without adding repeated oscillations. Keep existing action timing, quiet gaps and movement fade-out.
+- Raise only fluffy-tail active attraction limit from 0.04 to 0.12, with the same smooth envelope and exact per-call restoration. Keep root/proximal anchors, passive tail presets, damping, wind and original animation input.
+- Leave short-tail/dragon-tail actions, ear actions and 0.1.5 reduced ear wind unchanged. Collision investigation remains deferred; collision code is unchanged.
+- Add generated-pose checks for upright, rearward and sideways tails: middle participation, broad endpoint travel, all samples accepted by bounds, single arcs and full parameter restoration.
+
+The stronger fluffy targets pass offline checks, but actual visible movement and settling still require in-game confirmation. No mesh compression is included.
+
 # 0.1.5.0 — 2026-11-17
 
 - Make tail idle sways, tip lifts and flicks more visible with larger target angles and longer events. Retain independent timing, quiet gaps, movement fade-out and original animation input.

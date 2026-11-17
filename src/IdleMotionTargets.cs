@@ -26,7 +26,11 @@ public static unsafe class IdleMotionTargets
         // Only the tail needs an active drive: its heavy presets deliberately have
         // very weak attraction. Smoothly raise it for this constraint call only.
         var drive = part == IdlePart.Tail ? frame.TailDrive : 0;
-        if (!float.IsFinite(drive) || drive is < 0 or > 1) return null;
+        var driveLimit = part == IdlePart.Tail ? frame.TailDriveLimit : .04f;
+        var jointLimit = part == IdlePart.Tail ? frame.TailJointLimit : .5f;
+        if (!float.IsFinite(drive) || drive is < 0 or > 1
+            || !float.IsFinite(driveLimit) || driveLimit is < 0 or > .12f
+            || !float.IsFinite(jointLimit) || jointLimit is <= 0 or > .85f) return null;
         var nodes = drive > 0 ? *(byte**)(chain + 0x28) : null;
         if (drive > 0 && nodes == null) return null;
         Span<Vector3> modified = stackalloc Vector3[5];
@@ -44,7 +48,7 @@ public static unsafe class IdleMotionTargets
             var delta = saved[i].Position - saved[i - 1].Position;
             if (delta.LengthSquared() is < 1e-8f or > 9) return null;
             var joint = part == IdlePart.Tail ? i == 2 ? frame.Middle : i == 3 ? frame.Rear : frame.Tip : angles;
-            if (!float.IsFinite(joint.X) || !float.IsFinite(joint.Y) || joint.LengthSquared() > .25f) return null;
+            if (!float.IsFinite(joint.X) || !float.IsFinite(joint.Y) || joint.LengthSquared() > jointLimit * jointLimit) return null;
             // Tail uses yaw/pitch. Ear uses roll/pitch, mirrored by the event sampler.
             var q = Quaternion.CreateFromAxisAngle(part == IdlePart.Tail ? Vector3.UnitY : Vector3.UnitZ, joint.X)
                 * Quaternion.CreateFromAxisAngle(Vector3.UnitX, joint.Y);
@@ -57,13 +61,14 @@ public static unsafe class IdleMotionTargets
         {
             *(Vector3*)(particles + i * 96 + 0x40) = modified[i];
             if (nodes != null && modified[i] != saved[i].Position)
-                *(float*)(nodes + i * 160 + 0x88) = TailAttraction(saved[i].Attraction, drive);
+                *(float*)(nodes + i * 160 + 0x88) = TailAttraction(saved[i].Attraction, drive, driveLimit);
         }
         drivenNodes = nodes;
         return particles;
     }
 
-    public static float TailAttraction(float original, float drive) => original + MathF.Max(0, .04f - original) * drive;
+    public static float TailAttraction(float original, float drive, float limit = .04f)
+        => original + MathF.Max(0, limit - original) * drive;
 
     public static void Restore(byte* particles, byte* drivenNodes, ReadOnlySpan<SavedTarget> saved, int count)
     {

@@ -23,7 +23,7 @@ unsafe partial class Program
         {
             frame = schedule.Update(100 + i / 60.0, Vector3.Zero, 0, true, true, true, 1);
             if (frame.HasMotion) foreach (var name in frame.Status.Split(" · ")) seen.Add(name);
-            Assert(Bounded(frame.Middle) && Bounded(frame.Rear) && Bounded(frame.Tip)
+            Assert(Bounded(frame.Middle, frame.TailJointLimit) && Bounded(frame.Rear, frame.TailJointLimit) && Bounded(frame.Tip, frame.TailJointLimit)
                 && frame.LeftEar.Length() <= .3f && frame.RightEar.Length() <= .3f,
                 "Tail angles remain bounded and ear angles keep their previous limits");
             Assert(float.IsFinite(frame.TailDrive) && frame.TailDrive is >= 0 and <= 1, "Tail drive has a finite smooth envelope");
@@ -86,9 +86,10 @@ unsafe partial class Program
         Assert(sawEar && sawTail, "Ear and tail participation remain independent");
         TestIdleTargetScope();
         TestIdleTailResponse();
+        TestFluffyWholeTailMotion();
     }
 
-    static bool Bounded(Vector2 v) => float.IsFinite(v.X) && float.IsFinite(v.Y) && v.Length() <= .5f;
+    static bool Bounded(Vector2 v, float limit = .5f) => float.IsFinite(v.X) && float.IsFinite(v.Y) && v.Length() <= limit;
 
     static void TestIdleTargetScope()
     {
@@ -96,7 +97,8 @@ unsafe partial class Program
         var chain = mem.Allocate(0x180); var particles = mem.Allocate(5 * 96); var nodes = mem.Allocate(5 * 160);
         *(byte**)(chain + 0x20) = particles;
         *(byte**)(chain + 0x28) = nodes;
-        var frame = new IdleMotionFrame(100, new(.1f, .01f), new(.12f, .03f), new(.04f, .15f), new(.17f, .06f), new(-.13f, .07f), "test") { TailDrive = .8f };
+        var frame = new IdleMotionFrame(100, new(.1f, .01f), new(.12f, .03f), new(.04f, .15f), new(.17f, .06f), new(-.13f, .07f), "test")
+            { TailDrive = .8f, TailDriveLimit = .12f, TailJointLimit = .85f };
         var saved = new IdleMotionTargets.SavedTarget[5];
         foreach (var part in new[] { IdlePart.Tail, IdlePart.LeftEar, IdlePart.RightEar })
         {
@@ -127,7 +129,7 @@ unsafe partial class Program
                     if (part == IdlePart.Tail && i >= 2)
                     {
                         var attraction = *(float*)(nodes + i * 160 + 0x88);
-                        Assert(attraction > .025f && attraction <= .04f, "Weak tail receives bounded active drive");
+                        Assert(attraction > .09f && attraction <= .12f, "Weak fluffy tail receives bounded active drive");
                         Assert(nativeNode[..0x88].SequenceEqual(nodesBefore.AsSpan(i * 160, 0x88))
                             && nativeNode[0x8C..].SequenceEqual(nodesBefore.AsSpan(i * 160 + 0x8C, 20)), "Tail drive changes only attraction, never wind, damping or rest data");
                     }
@@ -210,5 +212,67 @@ unsafe partial class Program
         var bad = new IdleMotionFrame(100, new(.2f, 0), default, default, default, default, "invalid") { TailDrive = 1 };
         Assert(IdleMotionTargets.Apply(chain, IdlePart.Tail, bad, saved, out _, out _) == null, "Invalid native attraction rejects all changes");
         Assert(new ReadOnlySpan<byte>(particles, 5 * 96).SequenceEqual(before), "Coefficient validation runs before target writes");
+    }
+
+    static void TestFluffyWholeTailMotion()
+    {
+        using var mem = new NativeMemoryView();
+        var chain = mem.Allocate(0x180); var particles = mem.Allocate(5 * 96); var nodes = mem.Allocate(5 * 160);
+        *(byte**)(chain + 0x20) = particles; *(byte**)(chain + 0x28) = nodes; *(ushort*)(chain + 0xE8) = 5;
+        var saved = new IdleMotionTargets.SavedTarget[5];
+        // Cover an upright fluffy tail as well as rearward/sideways poses: yaw
+        // alone cannot move a vertical chain. Use the same 0.2 m segments.
+        foreach (var axis in new[] { Vector3.UnitY, -Vector3.UnitZ, Vector3.UnitX })
+        {
+            var middlePeak = new Dictionary<string, float>();
+            var tipPeak = new Dictionary<string, float>();
+            var schedule = new IdleMotion(142);
+            string previous = ""; float sign = 0;
+            for (var n = 0; n < 5; n++)
+            {
+                *(Vector3*)(particles + n * 96 + 0x40) = axis * (n * .2f);
+                *(float*)(nodes + n * 160 + 0x88) = .0025f;
+            }
+            for (var i = 0; i < 60 * 120; i++)
+            {
+                var sample = schedule.Update(100 + i / 60.0, default, 0, true, true, false, 1);
+                if (!sample.HasMotion) { previous = ""; continue; }
+                Assert(sample.TailDriveLimit == .12f && sample.TailJointLimit == .85f, "Fluffy style selects its dedicated active-motion limits");
+                var currentSign = MathF.Sign(sample.Middle.X);
+                if (sample.Status == previous && currentSign != 0)
+                    Assert(sign == currentSign, "Fluffy motion returns from one arc without repeated direction reversals");
+                previous = sample.Status; sign = currentSign;
+                var p = IdleMotionTargets.Apply(chain, IdlePart.Tail, sample, saved, out var driven, out var count);
+                Assert(p != null, "Every generated fluffy sample fits the native target validator");
+                var mid = Vector3.Distance(*(Vector3*)(p + 2 * 96 + 0x40), saved[2].Position);
+                var tip = Vector3.Distance(*(Vector3*)(p + 4 * 96 + 0x40), saved[4].Position);
+                middlePeak[sample.Status] = MathF.Max(middlePeak.GetValueOrDefault(sample.Status), mid);
+                tipPeak[sample.Status] = MathF.Max(tipPeak.GetValueOrDefault(sample.Status), tip);
+                IdleMotionTargets.Restore(p, driven, saved, count);
+            }
+            foreach (var action in new[] { "尾巴慢摆", "尾尖轻挑", "尾巴轻甩" })
+            {
+                Assert(middlePeak.GetValueOrDefault(action) > .035f, "Fluffy action moves the middle in every pose: " + action);
+                Assert(tipPeak.GetValueOrDefault(action) > .18f, "Fluffy action has broad endpoint travel in every pose: " + action);
+            }
+        }
+        foreach (var type in new[] { 0, 2 })
+        {
+            var schedule = new IdleMotion(3);
+            for (var i = 0; i < 60 * 30; i++)
+            {
+                var sample = schedule.Update(100 + i / 60.0, default, 0, true, true, false, type);
+                Assert(sample.TailDriveLimit == .04f && sample.TailJointLimit == .5f,
+                    "Short and dragon tails retain their earlier active-motion limits");
+                Assert(Bounded(sample.Middle) && Bounded(sample.Rear) && Bounded(sample.Tip), "Other styles retain previous angular limits");
+            }
+        }
+        var before = new ReadOnlySpan<byte>(particles, 5 * 96).ToArray();
+        var invalid = new IdleMotionFrame(100, new(.2f, 0), default, default, default, default, "invalid")
+            { TailDrive = 1, TailDriveLimit = .13f };
+        Assert(IdleMotionTargets.Apply(chain, IdlePart.Tail, invalid, saved, out _, out _) == null, "Out-of-range drive limit rejected");
+        invalid = invalid with { TailDriveLimit = .12f, TailJointLimit = float.NaN };
+        Assert(IdleMotionTargets.Apply(chain, IdlePart.Tail, invalid, saved, out _, out _) == null, "Nonfinite joint limit rejected");
+        Assert(new ReadOnlySpan<byte>(particles, 5 * 96).SequenceEqual(before), "Bad profile limits leave all targets intact");
     }
 }
