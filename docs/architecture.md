@@ -22,6 +22,7 @@ Hooks and native calls are enabled only for that exact executable. Addresses bel
 | Per-character environment wind update | `0x5FC130` |
 | BonePhysicsModule.Load | `0x18B9800` |
 | Chain pose construction | `0x1BE66E0` |
+| Chain attraction / length constraints (idle target scope) | `0x1BE6030` |
 | Chain finalization | `0x1BE7560` |
 | Resource acquire / release | `0x2FEA70` / `0x2FEA40` |
 | Skeleton bone lookup | `0x25A5B0` |
@@ -67,9 +68,23 @@ Preview data is copied in the live owning chain's finalization callback into imm
 
 The plugin exposes query/contact counters plus separate raw scene/ground hits, invalid results and triangle-normal recoveries. With preview active, it also measures the maximum world-space difference between the four physical bone points and finalized node-matrix translations (node stride 160, translation `+0x70`); the virtual tip has no final matrix. This diagnostic does not move the preview or alter animation blending. Collision switches default off to permit an initial movement/animation comparison. No claim of universal furniture, clothing mesh, other-character, or fur silhouette collision is made.
 
+## Optional random idle motion (0.1.4)
+
+The default-off `RandomIdleMotions` setting is independent of native descriptor parameters and does not force a rebuild. The framework thread owns an elapsed-time scheduler with two independent channels and publishes immutable samples; worker callbacks never advance randomness or time. Six bounded event curves have zero displacement and first derivative at their endpoints. Each channel has a quiet interval, randomized duration/amplitude and no immediate repeated kind. Fluffy-tail duration is scaled by 1.25 and angles by 0.85; dragon-tail angles by 0.7. These are procedural target scales, not changes to the native physics preset.
+
+Eligibility requires 1.8 seconds below 0.08 m/s and 0.18 rad/s, followed by a randomized initial wait of 0.8–2.5 seconds. Movement/turning fades the active input over 0.35 seconds; blocked states reset scheduling. Framework gaps greater than 0.5 seconds and player draw changes reset rather than catch up. Combat, casting, mounting, unconsciousness, zone transitions and cutscenes are gated through Dalamud conditions. GPose follows the user's existing pause option. Samples older than 0.5 seconds are ignored. Disabled ears and original-comparison tails are excluded independently.
+
+The exact supported client calls `0x1BE6030` at `0x193B148` with `(chain, context, byte flags)`. Its length pass operates on particle positions; at `0x1BE634F–0x1BE63F1` the attraction pass reads particle target XYZ at `+0x40` and pulls toward it with the existing native coefficient. This routine does not write the target fields or replace particle storage. Native body/collision work and chain pose construction follow it. The detour has this audited three-argument ABI; it does not hook the nine-argument integrator.
+
+For selected local chains only, stack-backed originals are captured, every input is validated, and a complete candidate target pose is built before any write. Cumulative small joint rotations preserve segment lengths; tail target b/c and ear roots remain exact. Only d/e/tip or an ear's virtual endpoint receive target XYZ changes. A `finally` scope restores the exact original target data after each native call, including repeated solver iterations. No particle position/velocity/force, rest length, animation resource, final bone pose, solver clock or weather input is directly edited by this feature. Collision code sees native solver output, and finalization retains the original animation blend. The feature neither forces dormant simulators awake nor guarantees visible amplitude for arbitrary custom bone axes.
+
+Descriptor construction records indices for existing standard two-node `j_mimi_l/r` chains or the appended pair. Binding refresh uses live module/skeleton identity and chain counts; cached chain addresses are only identity tokens. The hook rejects unrelated chain pointers before dereferencing, and then confirms live skeleton ownership and its current module. Bindings are cleared before descriptor replacement and restoration. The option works for supported ears with the tail in original mode and for a tail with ears disabled. New validation errors disable the optional target feature while allowing original constraints to run; existing physics remains separate.
+
+Offline tests verify schedule variety, small finite bounds, frame-rate stability at 30/60/144 FPS, movement/blocked-state cancellation, no catch-up bursts, independent part switches, root/length preservation, complete target restoration, unchanged non-target particle bytes and self-only binding. All 576 local Mod parameter combinations are also compared with the idle option enabled. **The native detour and actual visual response still need in-game testing.** No successful 0.1.3 collision acceptance is inferred from these tests.
+
 ## Lifecycle and limitations
 
-- Ear/tail presets and collision modes rebuild base physics at the next job-creation boundary. Changing node radii, root protection or preview does not rebuild or reset the simulation. Manual reapply forces a rebuild.
+- Ear/tail presets and collision modes rebuild base physics at the next owned native boundary. Changing node radii, root protection, preview or the idle-motion toggle does not rebuild or reset the native simulation. Manual reapply forces a rebuild.
 - Native game scheduling controls the timestep; this release does not replace or globally alter the physics clock.
 - Ownership is checked from live callback objects against the local player's draw object and physics module. Other players and NPCs are never selected for descriptor replacement, contact correction or preview. Worker callbacks do not dereference a cached actor pointer.
 - GPose pauses plugin control by default. Detailed posing-tool and Customize+ coexistence still needs runtime testing.

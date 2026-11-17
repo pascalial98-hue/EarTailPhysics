@@ -21,6 +21,7 @@ public sealed class Settings : IPluginConfiguration
     public bool ProtectRoot = true;
     public bool ProtectProximal = true;
     public bool PauseInGPose = true;
+    public bool RandomIdleMotions;
 
     public Settings Snapshot()
     {
@@ -48,7 +49,7 @@ public sealed class Settings : IPluginConfiguration
         return float.IsFinite(value) ? Math.Clamp(value, 0, .30f) : fallback;
     }
 
-    // Contact radii and visualization are read per physics callback and require no native rebuild.
+    // Contact radii, visualization and idle motion are read per callback; no native rebuild.
     public bool SameNativeConfiguration(Settings other) =>
         Enabled == other.Enabled && Ears == other.Ears && EarGrade == other.EarGrade &&
         TailType == other.TailType && TailStrength == other.TailStrength && BodyCollision == other.BodyCollision &&

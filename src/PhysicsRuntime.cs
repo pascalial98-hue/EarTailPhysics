@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Numerics;
 using Dalamud.Hooking;
 using Dalamud.Plugin.Services;
+using Dalamud.Game.ClientState.Conditions;
 using GameFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 
 namespace EarTailPhysics;
@@ -18,11 +19,19 @@ public unsafe sealed class PhysicsRuntime : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate ushort BoneDelegate(nint skeleton, byte* name);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void PoseDelegate(nint chain, nint context);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void FinalizeDelegate(nint chain, byte fixedLength, float blend);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void ConstraintDelegate(nint chain, nint context, byte flags);
 
     private readonly IObjectTable objects;
     private readonly IClientState client;
     private readonly IFramework framework;
     private readonly IPluginLog log;
+    private readonly ICondition conditions;
+    private readonly IdleMotion idleMotion = new();
+    private IdleMotionFrame idleFrame = IdleMotionFrame.Empty;
+    private IdleMotionBindings idleBindings = IdleMotionBindings.Empty;
+    private Hook<ConstraintDelegate>? constraintHook;
+    private bool idleFailed;
+    private long idleTargetUpdates;
     private Hook<JobDelegate>? jobHook;
     private Hook<WindDelegate>? windHook;
     private Hook<PoseDelegate>? poseHook;
@@ -65,14 +74,17 @@ public unsafe sealed class PhysicsRuntime : IDisposable
     public bool TailSimulating { get; private set; }
     public string ContactStatus => contactState?.LastResult ?? "等待尾链绑定";
     public float PoseOffset => contactState?.PoseOffset ?? float.NaN;
+    public string IdleStatus => idleFailed ? "随机动作已暂停：请重新应用设置" : Volatile.Read(ref idleFrame).Status;
+    public long IdleEvents => idleMotion.Events;
+    public long IdleTargetUpdates => Interlocked.Read(ref idleTargetUpdates);
     public CollisionPreview? Preview => Volatile.Read(ref preview);
     public void SetPreviewVisible(bool visible) => Volatile.Write(ref previewVisible, visible);
 
     public PhysicsRuntime(Settings settings, IObjectTable objects, IClientState client, IFramework framework,
-        IGameInteropProvider interop, IPluginLog log)
+        IGameInteropProvider interop, IPluginLog log, ICondition conditions)
     {
         this.settings = settings.Snapshot(); this.objects = objects; this.client = client;
-        this.framework = framework; this.log = log;
+        this.framework = framework; this.log = log; this.conditions = conditions;
         var main = Process.GetCurrentProcess().MainModule ?? throw new InvalidOperationException("Process image unavailable");
         using var file = File.OpenRead(main.FileName);
         var hash = Convert.ToHexStringLower(SHA256.HashData(file));
@@ -96,11 +108,12 @@ public unsafe sealed class PhysicsRuntime : IDisposable
             jobHook = interop.HookFromAddress<JobDelegate>(b + 0x18B96D0, OnCreateJobs);
             poseHook = interop.HookFromAddress<PoseDelegate>(b + 0x1BE66E0, OnPose);
             finalizeHook = interop.HookFromAddress<FinalizeDelegate>(b + 0x1BE7560, OnFinalize);
-            finalizeHook.Enable(); poseHook.Enable(); jobHook.Enable(); windHook.Enable();
+            constraintHook = interop.HookFromAddress<ConstraintDelegate>(b + 0x1BE6030, OnConstraints);
+            finalizeHook.Enable(); poseHook.Enable(); constraintHook.Enable(); jobHook.Enable(); windHook.Enable();
             framework.Update += OnFramework;
             Supported = true;
         }
-        catch { windHook?.Dispose(); jobHook?.Dispose(); poseHook?.Dispose(); finalizeHook?.Dispose(); throw; }
+        catch { windHook?.Dispose(); jobHook?.Dispose(); poseHook?.Dispose(); finalizeHook?.Dispose(); constraintHook?.Dispose(); throw; }
     }
 
     public void Configure(Settings value, bool forceRebuild = false)
@@ -108,6 +121,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
         var next = value.Snapshot();
         var rebuild = forceRebuild || failed || !Volatile.Read(ref settings).SameNativeConfiguration(next);
         failed = false;
+        idleFailed = false;
         Volatile.Write(ref settings, next);
         if (rebuild) Interlocked.Increment(ref generation);
     }
@@ -116,7 +130,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
     {
         var actor = objects.LocalPlayer;
         var draw = actor == null ? 0 : *(nint*)(actor.Address + 0x100);
-        if (draw != Volatile.Read(ref localDraw)) Interlocked.Increment(ref generation);
+        if (draw != Volatile.Read(ref localDraw)) { Interlocked.Increment(ref generation); idleMotion.Reset(); }
         Volatile.Write(ref localDraw, draw);
         if (!failed && Rebuilds == 0)
             Status = draw == 0 ? "等待可用的自身角色" : "已找到自身，等待物理入口回调";
@@ -124,7 +138,24 @@ public unsafe sealed class PhysicsRuntime : IDisposable
         if (pose != inPose) { inPose = pose; Interlocked.Increment(ref generation); }
         var game = GameFramework.Instance();
         Volatile.Write(ref bgModule, game == null ? 0 : (nint)game->BGCollisionModule);
+        var cfg = Volatile.Read(ref settings);
+        var binding = Volatile.Read(ref idleBindings);
+        var tailIdle = cfg.TailStrength > 0 && binding.Tail != 0;
+        var earsIdle = cfg.Ears && (binding.LeftEar != 0 || binding.RightEar != 0);
+        var allowed = !disposed && !failed && !idleFailed && cfg.Enabled && cfg.RandomIdleMotions
+            && (tailIdle || earsIdle) && actor != null && draw != 0 && !(cfg.PauseInGPose && pose)
+            && !conditions[ConditionFlag.InCombat] && !conditions[ConditionFlag.Mounted]
+            && !conditions[ConditionFlag.Casting] && !conditions[ConditionFlag.Unconscious]
+            && !conditions[ConditionFlag.BetweenAreas] && !conditions[ConditionFlag.BetweenAreas51]
+            && !conditions[ConditionFlag.WatchingCutscene] && !conditions[ConditionFlag.OccupiedInCutSceneEvent];
+        var frame = idleMotion.Update(Now, actor?.Position ?? default, actor?.Rotation ?? 0,
+            allowed, tailIdle, earsIdle, cfg.TailType);
+        if (cfg.RandomIdleMotions && cfg.Enabled && !tailIdle && !earsIdle)
+            frame = frame with { Status = "等待已启用且受支持的耳尾骨链" };
+        Volatile.Write(ref idleFrame, cfg.RandomIdleMotions ? frame : IdleMotionFrame.Empty);
     }
+
+    private static double Now => Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
 
     private void OnCreateJobs(nint module, nint updater)
     {
@@ -202,6 +233,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
         var adopted = false;
         var held = false;
         var windTailIndex = next.HasTail ? next.TailSimulatorIndex : view?.TailSimulatorIndex ?? -1;
+        Volatile.Write(ref idleBindings, IdleMotionBindings.Empty);
         Volatile.Write(ref contactChain, 0);
         Volatile.Write(ref preview, null);
         try
@@ -243,6 +275,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
 
     private void BindTail(nint module)
     {
+        BindIdleChains(module);
         if (contactsFailed) return;
         var tail = RuntimeBinding.TailChain(module, view?.TailSimulatorIndex ?? -1, view?.TailChainIndex ?? -1, out var sim);
         if (tail == 0)
@@ -262,6 +295,56 @@ public unsafe sealed class PhysicsRuntime : IDisposable
         TailWind = ContactMath.Finite(wind) ? wind.Length() : 0;
         TailSimulating = *(byte*)(sim + 0x444) != 0;
         TailStatus = TailSimulating ? "尾链已绑定，原生模拟已启用" : "尾链已绑定，当前动作暂停原生模拟";
+    }
+
+    private void BindIdleChains(nint module)
+    {
+        if (idleFailed || !Volatile.Read(ref settings).RandomIdleMotions || view == null)
+        { Volatile.Write(ref idleBindings, IdleMotionBindings.Empty); return; }
+        var tail = RuntimeBinding.Chain(module, view.TailSimulatorIndex, view.TailChainIndex, 5, out _);
+        var left = RuntimeBinding.Chain(module, view.LeftEarSimulatorIndex, view.LeftEarChainIndex, 2, out _);
+        var right = RuntimeBinding.Chain(module, view.RightEarSimulatorIndex, view.RightEarChainIndex, 2, out _);
+        var old = Volatile.Read(ref idleBindings);
+        if (old.Module != module || old.Tail != tail || old.LeftEar != left || old.RightEar != right)
+            Volatile.Write(ref idleBindings, new(module, tail, left, right));
+    }
+
+    private void OnConstraints(nint chain, nint context, byte flags)
+    {
+        Span<Vector3> saved = stackalloc Vector3[5];
+        byte* particles = null;
+        var count = 0;
+        try
+        {
+            var cfg = Volatile.Read(ref settings);
+            var frame = Volatile.Read(ref idleFrame);
+            if (!disposed && !failed && !idleFailed && cfg.Enabled && cfg.RandomIdleMotions && frame.HasMotion
+                && Now - frame.Time is >= 0 and < .5)
+            {
+                var part = RuntimeBinding.IdleChainPart(chain, Volatile.Read(ref localDraw), Volatile.Read(ref idleBindings));
+                if ((part == IdlePart.Tail && cfg.TailStrength == 0) || ((part is IdlePart.LeftEar or IdlePart.RightEar) && !cfg.Ears))
+                    part = IdlePart.None;
+                particles = IdleMotionTargets.Apply((byte*)chain, part, frame, saved, out count);
+                if (particles != null) Interlocked.Increment(ref idleTargetUpdates);
+            }
+        }
+        catch (Exception ex)
+        {
+            idleFailed = true;
+            Volatile.Write(ref idleBindings, IdleMotionBindings.Empty);
+            log.Error(ex, "Random idle targets disabled after validation failure");
+        }
+        try
+        {
+            // Native attraction/length constraints run before body, scene and pose processing.
+            constraintHook!.Original(chain, context, flags);
+        }
+        finally
+        {
+            // The audited function does not replace particle storage or write target +0x40.
+            // Restore even when the original managed delegate reports an exception.
+            IdleMotionTargets.Restore(particles, saved, count);
+        }
     }
 
     private SceneContacts.State? OwnedContactState(nint chain)
@@ -321,6 +404,8 @@ public unsafe sealed class PhysicsRuntime : IDisposable
 
     private void Restore()
     {
+        Volatile.Write(ref idleBindings, IdleMotionBindings.Empty);
+        Volatile.Write(ref idleFrame, IdleMotionFrame.Empty);
         Volatile.Write(ref contactChain, 0);
         Volatile.Write(ref preview, null);
         var actor = objects.LocalPlayer;
@@ -345,8 +430,8 @@ public unsafe sealed class PhysicsRuntime : IDisposable
             catch (Exception ex) { log.Error(ex, "Restore failed; redraw the local character to restore original physics"); }
         }
         disposed = true;
-        windHook?.Disable(); jobHook?.Disable(); poseHook?.Disable(); finalizeHook?.Disable();
-        windHook?.Dispose(); jobHook?.Dispose(); poseHook?.Dispose(); finalizeHook?.Dispose();
+        windHook?.Disable(); jobHook?.Disable(); poseHook?.Disable(); finalizeHook?.Disable(); constraintHook?.Disable();
+        windHook?.Dispose(); jobHook?.Dispose(); poseHook?.Dispose(); finalizeHook?.Dispose(); constraintHook?.Dispose();
         view?.Dispose();
     }
 }

@@ -49,7 +49,14 @@ unsafe partial class Program
             Assert(new ReadOnlySpan<byte>(*(byte**)(off.Handle+0xD8),104).SequenceEqual(new ReadOnlySpan<byte>(sim,104)),"Disabled exact descriptor bytes");
         }
         using(var onlyEars=new DescriptorBuilder(h,new Settings{TailStrength=0},true))
+        {
             Assert(!onlyEars.HasTail&&onlyEars.HasEars,"Ears independent of original tail");
+            Assert(onlyEars.LeftEarSimulatorIndex == 1 && onlyEars.RightEarSimulatorIndex == 1
+                && onlyEars.LeftEarChainIndex == 0 && onlyEars.RightEarChainIndex == 1, "Appended ears expose separate idle bindings");
+            using var existing = new DescriptorBuilder(onlyEars.Handle, new Settings { RandomIdleMotions = true }, true);
+            Assert(existing.Handle[0xD0] == 2 && existing.LeftEarSimulatorIndex == 1 && existing.RightEarSimulatorIndex == 1
+                && existing.LeftEarChainIndex == 0 && existing.RightEarChainIndex == 1, "Existing standard ear chains bind without duplicate creation");
+        }
         using(var onlyTail=new DescriptorBuilder(h,new Settings{Ears=false},true))
             Assert(onlyTail.HasTail&&!onlyTail.HasEars&&onlyTail.Handle[0xD0]==1,"Tail independent of ears");
         var point=new Vector3(1,-.1f,2);
@@ -69,13 +76,14 @@ unsafe partial class Program
         TestWorldContacts();
         TestPreviewGeometry();
         TestRuntimeBindingAndWind();
+        TestIdleMotions();
         int cases=0;
         if(args.Length>0)
         {
             foreach(var test in JsonSerializer.Deserialize<List<Case>>(File.ReadAllText(args[0]))!)
             {
                 using var fixture=new FileFixture(File.ReadAllBytes(test.Input));
-                using var built=new DescriptorBuilder(fixture.Handle,new Settings{TailType=test.Type,TailStrength=test.Strength,EarGrade=test.Ear,BodyCollision=test.Body},test.Cat);
+                using var built=new DescriptorBuilder(fixture.Handle,new Settings{TailType=test.Type,TailStrength=test.Strength,EarGrade=test.Ear,BodyCollision=test.Body,RandomIdleMotions=true},test.Cat);
                 using var expected=new FileFixture(File.ReadAllBytes(test.Expected));
                 CompareChains(built.Handle,expected.Handle);
                 cases++;

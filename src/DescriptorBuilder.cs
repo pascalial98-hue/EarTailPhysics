@@ -9,6 +9,10 @@ public unsafe sealed class DescriptorBuilder : IDisposable
     public byte* Handle { get; }
     public int TailSimulatorIndex { get; private set; } = -1;
     public int TailChainIndex { get; private set; } = -1;
+    public int LeftEarSimulatorIndex { get; private set; } = -1;
+    public int LeftEarChainIndex { get; private set; } = -1;
+    public int RightEarSimulatorIndex { get; private set; } = -1;
+    public int RightEarChainIndex { get; private set; } = -1;
     public bool HasEars { get; private set; }
     public bool HasTail => TailSimulatorIndex >= 0;
     private static readonly string[] TailNames = ["n_sippo_b", "n_sippo_c", "n_sippo_d", "n_sippo_e", ""];
@@ -49,6 +53,8 @@ public unsafe sealed class DescriptorBuilder : IDisposable
                             nodes = Memory.Copy(nodes, nn * 84);
                             *(byte**)(chain + 0x30) = nodes;
                             TuneEar(chain, nodes, cfg.EarGrade);
+                            if (first == "j_mimi_l") { LeftEarSimulatorIndex = si; LeftEarChainIndex = ci; }
+                            else { RightEarSimulatorIndex = si; RightEarChainIndex = ci; }
                             HasEars = true;
                         }
                     }
@@ -73,6 +79,8 @@ public unsafe sealed class DescriptorBuilder : IDisposable
                 CreateEars(sims + count * 104, cfg.EarGrade);
                 Handle[0xD0] = (byte)(count + 1);
                 HasEars = true;
+                LeftEarSimulatorIndex = RightEarSimulatorIndex = count;
+                LeftEarChainIndex = 0; RightEarChainIndex = 1;
             }
         }
         catch { Memory.Dispose(); throw; }

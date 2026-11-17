@@ -67,6 +67,9 @@ unsafe partial class Program
         Assert(RuntimeBinding.TailChain((nint)module, 0, 0, out _) == 0, "Do not bind a different skeleton's chain");
         Assert(RuntimeBinding.TailChain((nint)module, 0, 1, out _) == 0, "Reject absent chain");
         Assert(RuntimeBinding.TailChain((nint)module, 3, 0, out _) == 0, "Reject absent simulator");
+        *(byte**)(replacement + 0x10) = skeleton; *(ushort*)(replacement + 0xE8) = 2;
+        Assert(RuntimeBinding.Chain((nint)module, 0, 0, 2, out _) == (nint)replacement, "Two-node ear binds through live simulator validation");
+        Assert(RuntimeBinding.TailChain((nint)module, 0, 0, out _) == 0, "Ear chain cannot be mistaken for five-node tail");
 
         *(uint*)(newTail + 0x10) = 7; *(Vector3*)(newTail + 0x40) = Vector3.UnitY;
         saved.Restore((nint)module, 0);

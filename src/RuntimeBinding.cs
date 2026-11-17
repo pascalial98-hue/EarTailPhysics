@@ -3,6 +3,18 @@ namespace EarTailPhysics;
 // Validate from a live callback object. Cached addresses are identity tokens only.
 public static unsafe class RuntimeBinding
 {
+    public static IdlePart IdleChainPart(nint chain, nint localDraw, IdleMotionBindings binding)
+    {
+        if (chain == 0 || localDraw == 0 || binding.Module == 0) return IdlePart.None;
+        var part = chain == binding.Tail ? IdlePart.Tail : chain == binding.LeftEar ? IdlePart.LeftEar
+            : chain == binding.RightEar ? IdlePart.RightEar : IdlePart.None;
+        if (part == IdlePart.None) return part; // Reject unrelated chains before dereferencing.
+        var skeleton = *(nint*)(chain + 0x10);
+        var owner = skeleton == 0 ? 0 : *(nint*)(skeleton + 0xB8);
+        return owner == localDraw && *(nint*)(owner + 0x158) == binding.Module
+            && *(nint*)(binding.Module + 0x98) == skeleton ? part : IdlePart.None;
+    }
+
     public static bool OwnsModule(nint module, nint localDraw, out nint skeleton)
     {
         skeleton = 0;
@@ -22,6 +34,9 @@ public static unsafe class RuntimeBinding
     }
 
     public static nint TailChain(nint module, int simulatorIndex, int chainIndex, out nint simulator)
+        => Chain(module, simulatorIndex, chainIndex, 5, out simulator);
+
+    public static nint Chain(nint module, int simulatorIndex, int chainIndex, int nodeCount, out nint simulator)
     {
         simulator = 0;
         if (module == 0 || simulatorIndex < 0 || chainIndex < 0) return 0;
@@ -37,7 +52,7 @@ public static unsafe class RuntimeBinding
             || chainIndex >= (chainEnd - chains) / 8) return 0;
         var chain = *(nint*)(chains + chainIndex * 8);
         if (chain == 0 || *(nint*)(chain + 0x10) != *(nint*)(module + 0x98)
-            || *(ushort*)(chain + 0xE8) != 5) return 0;
+            || *(ushort*)(chain + 0xE8) != nodeCount) return 0;
         simulator = sim;
         return chain;
     }

@@ -21,12 +21,12 @@ public sealed class Plugin : IDalamudPlugin
     private static readonly string[] BodyNames = ["关闭", "细尾 · 中后段", "中等 · 中后段", "粗尾 · 中后段"];
 
     public Plugin(IDalamudPluginInterface pi, IObjectTable objects, IClientState client, IFramework framework,
-        IGameInteropProvider interop, ICommandManager commands, IPluginLog log, IGameGui gameGui)
+        IGameInteropProvider interop, ICommandManager commands, IPluginLog log, IGameGui gameGui, ICondition conditions)
     {
         this.pi = pi; this.commands = commands;
         cfg = (pi.GetPluginConfig() as Settings ?? new Settings()).Snapshot();
         overlay = new CollisionOverlay(gameGui);
-        runtime = new PhysicsRuntime(cfg, objects, client, framework, interop, log);
+        runtime = new PhysicsRuntime(cfg, objects, client, framework, interop, log, conditions);
         commands.AddHandler("/earphysics", new CommandInfo((_, _) => open = !open) { HelpMessage = "耳尾物理增强：打开独立设置" });
         pi.UiBuilder.Draw += Draw;
         pi.UiBuilder.OpenConfigUi += Open;
@@ -48,7 +48,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!open) return;
         ImGui.SetNextWindowSize(new Vector2(530, 0), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("耳尾物理增强 · 0.1.3 测试版", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.Begin("耳尾物理增强 · 0.1.4 测试版", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         { ImGui.End(); return; }
         try
         {
@@ -95,11 +95,15 @@ public sealed class Plugin : IDalamudPlugin
                 }
             }
             ImGui.EndDisabled();
+            changed |= ImGui.Checkbox("随机耳尾小动作（试验）", ref cfg.RandomIdleMotions);
+            if (cfg.RandomIdleMotions)
+                ImGui.TextWrapped("静止片刻后，随机轻摆尾巴、轻挑尾尖或动耳；移动／转身时淡出。遵循耳朵开关和尾巴档位，原版对照尾巴不参与。");
             changed |= ImGui.Checkbox("GPose 中暂停接管", ref cfg.PauseInGPose);
             ImGui.EndDisabled();
             if (changed) { pi.SavePluginConfig(cfg); runtime.Configure(cfg); }
             ImGui.Separator();
             ImGui.TextWrapped(runtime.Status);
+            if (cfg.RandomIdleMotions) ImGui.TextWrapped(runtime.IdleStatus);
             if (cfg.GroundCollision || cfg.SceneCollision)
             {
                 ImGui.TextUnformatted($"场景查询 {runtime.Queries} 次 · 发生接触 {runtime.Contacts} 次");
@@ -114,6 +118,8 @@ public sealed class Plugin : IDalamudPlugin
                 ImGui.TextUnformatted($"尾链更新 {runtime.TailPoseCallbacks} 次 · 原生风输入 {runtime.TailWind:F3}");
                 ImGui.TextUnformatted($"原生命中：场景 {runtime.SceneHits} · 地面 {runtime.GroundHits} · 无效结果 {runtime.InvalidHits}");
                 ImGui.TextUnformatted($"三角面法线补全 {runtime.TriangleNormals} 次");
+                if (cfg.RandomIdleMotions)
+                    ImGui.TextUnformatted($"随机动作 {runtime.IdleEvents} 次 · 动作目标应用 {runtime.IdleTargetUpdates} 次");
                 if (runtime.Preview is { Fresh: true } && float.IsFinite(runtime.PoseOffset))
                     ImGui.TextUnformatted($"物理点与动画混合位置最大偏差 {runtime.PoseOffset * 100:F1} cm");
                 ImGui.TextWrapped("风输入由游戏环境决定，不是强度档位。若仍停在等待，请记录这里的状态以便定位。");

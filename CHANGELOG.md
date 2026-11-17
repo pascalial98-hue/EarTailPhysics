@@ -1,3 +1,14 @@
+# 0.1.4.0 — 2026-11-17
+
+- Add an opt-in random idle-motion switch, off by default, without rebuilding native physics when toggled.
+- Independent ear/tail schedules: slow tail sway, tip lift, single flick, left/right ear twitch and a brief paired-ear perk. Vary timing, amplitude, duration and tail direction; avoid consecutive identical events per channel.
+- Wait for stillness; fade motion while moving/turning. Suspend in combat, casting, mounted, unconscious, area-transition and cutscene states, and obey the existing GPose pause setting. Respect ear-off and original-tail choices.
+- Feed bounded, length-preserving additive targets into the native attraction/constraint pass, then restore exact original targets after every call. Keep root/proximal targets, physics presets, live wind, animation resources and final animation blending intact. Existing collision processing runs after this input.
+- Expose current action, scheduled-event count and actual target-application count. Only validated local-player standard tail and cat-ear chains participate.
+- Offline checks cover six actions, event boundaries, frame-rate variation, movement/pause gates, exact restoration, ownership and 576 old Mod parameter combinations with the new switch enabled.
+
+This is an experimental motion test release. The new native constraint detour, visible motion strength and collision interaction have not been exercised in-game here. The 0.1.3 collision fixes remain awaiting tester feedback. Mesh compression remains separate and paused.
+
 # 0.1.3.0 — 2026-11-17
 
 - Fix collision-query and preview coordinates: native particles are in skeleton model space, not world-oriented offsets. Apply the full actor affine transform, including rotation and scale; invert it for corrected positions and velocities.

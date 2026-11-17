@@ -3,11 +3,11 @@
     "Author": "pascalial98-hue",
     "Name": "耳尾物理增强 · Ear & Tail Physics",
     "InternalName": "EarTailPhysics",
-    "AssemblyVersion": "0.1.3.0",
+    "AssemblyVersion": "0.1.4.0",
     "DalamudApiLevel": 15,
     "ApplicableVersion": "any",
     "Punchline": "独立耳尾物理：保留动画、独立档位、试验性场景碰撞",
-    "Description": "独立运行的耳尾物理测试插件，无需安装物理 PMP。耳朵四档、尾巴三种风格和两档惯性可分别设置，保留游戏原动画跟随和风响应。提供默认关闭的身体、地面与场景碰撞试验。尾巴五个节点可独立调节接触半径，尾根与靠根段分别选择保护，支持碰撞体线框预览。\n\n首版仅作用于自身，支持标准尾链和猫耳骨骼。测试前关闭旧耳尾物理包；自定义耳尾的外观 Mod 仍需保留。任意骨链、衣物网格和所有家具碰撞不在保证范围内。\n\n仅适配国服 2026.11.03 客户端 / Dalamud API 15；其他客户端自动停用接管。此版本尚待游戏实测，不代表已达到 Mod 的全部视觉效果。\n命令：/earphysics",
+    "Description": "独立运行的耳尾物理测试插件，无需安装物理 PMP。耳朵四档、尾巴三种风格和两档惯性可分别设置，保留游戏原动画跟随和风响应。提供默认关闭的身体、地面与场景碰撞试验。尾巴五个节点可独立调节接触半径，尾根与靠根段分别选择保护，支持碰撞体线框预览。可选随机耳尾小动作，静止时偶尔摆尾、挑尾尖或动耳，默认关闭。\n\n首版仅作用于自身，支持标准尾链和猫耳骨骼。测试前关闭旧耳尾物理包；自定义耳尾的外观 Mod 仍需保留。任意骨链、衣物网格和所有家具碰撞不在保证范围内。\n\n仅适配国服 2026.11.03 客户端 / Dalamud API 15；其他客户端自动停用接管。此版本尚待游戏实测，不代表已达到 Mod 的全部视觉效果。\n命令：/earphysics",
     "RepoUrl": "https://github.com/pascalial98-hue/EarTailPhysics",
     "Tags": [
       "physics",
@@ -22,14 +22,14 @@
     "CanUnloadAsync": false,
     "LoadPriority": 0,
     "AcceptsFeedback": false,
-    "DownloadLinkInstall": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.3.0/EarTailPhysics.zip",
-    "DownloadLinkUpdate": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.3.0/EarTailPhysics.zip",
-    "DownloadLinkTesting": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.3.0/EarTailPhysics.zip",
-    "TestingAssemblyVersion": "0.1.3.0",
+    "DownloadLinkInstall": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.4.0/EarTailPhysics.zip",
+    "DownloadLinkUpdate": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.4.0/EarTailPhysics.zip",
+    "DownloadLinkTesting": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.4.0/EarTailPhysics.zip",
+    "TestingAssemblyVersion": "0.1.4.0",
     "TestingDalamudApiLevel": 15,
     "IsHide": false,
     "IsTestingExclusive": false,
-    "LastUpdate": 1794899591,
-    "Changelog": "修正尾巴碰撞与预览漏用角色旋转和缩放的问题，同步修正骨段长度和速度的坐标换算；兼容只返回三角面的场景命中，新增原生命中／无效结果与动画混合偏差诊断。保持已确认正常的风摆、原动画、重量感和独立耳尾档位。碰撞修订仍需游戏验收。"
+    "LastUpdate": 1794904467,
+    "Changelog": "新增默认关闭的随机耳尾小动作：尾巴慢摆、尾尖轻挑、轻甩、左右单耳轻抖和双耳轻竖；耳尾分别随机触发，静止后开始，移动／转身时淡出，战斗等状态暂停。通过临时动作目标交给原生物理求解，不改变既有风摆、惯性和动画资源。保留 0.1.3 碰撞修订；实际动作观感待游戏测试。"
   }
 ]
