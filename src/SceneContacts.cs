@@ -23,6 +23,10 @@ public unsafe sealed class SceneContacts
         public readonly Vector3[] Points = new Vector3[5];
         public readonly Vector3[] Normals = new Vector3[5];
         public readonly float[] Lengths = new float[4];
+        public readonly SweepShape?[] SpatialSweeps = new SweepShape?[5];
+        public bool ContactAdjusted;
+        public uint ContactMask;
+        public Settings? FrameSettings;
         public Vector3 Root;
         public bool Initialized;
     }
@@ -37,7 +41,12 @@ public unsafe sealed class SceneContacts
 
     public bool Resolve(byte* chain, State state, Settings cfg, nint bgModule)
     {
+        Array.Clear(state.SpatialSweeps);
+        Array.Clear(state.Normals);
         if (bgModule == 0 || (!cfg.GroundCollision && !cfg.SceneCollision)) return false;
+        if (cfg.GetContactRadius(0) == 0 && cfg.GetContactRadius(1) == 0 && cfg.GetContactRadius(2) == 0
+            && cfg.GetContactRadius(3) == 0 && cfg.GetContactRadius(4) == 0)
+        { state.Initialized = false; return false; }
         if (*(ushort*)(chain + 0xE8) != 5) return false;
         var particles = *(byte**)(chain + 0x20);
         if (particles == null) return false;
@@ -64,21 +73,23 @@ public unsafe sealed class SceneContacts
         var any = false;
         for (var iteration = 0; iteration < 4; iteration++)
         {
-            ContactMath.KeepLengths(state.Points, state.Lengths, 2);
-            for (var i = 2; i < 5; i++)
+            ContactMath.KeepLengths(state.Points, state.Lengths, cfg);
+            for (var i = 0; i < 5; i++)
             {
-                var radius = cfg.ContactRadius * (i == 2 ? 1 : i == 3 ? .7f : .45f);
+                var radius = cfg.GetContactRadius(i);
+                if (radius == 0) continue;
                 ref var next = ref state.Points[i];
                 if (cfg.SceneCollision)
                 {
                     // Temporal sweep prevents tunnelling; link sweep catches static wall intersections.
-                    var start = iteration == 0 ? state.Previous[i] : state.Points[i - 1];
+                    var start = iteration == 0 || i == 0 ? state.Previous[i] : state.Points[i - 1];
                     var direction = next - start;
                     var distance = direction.Length();
                     if (distance > .0001f && distance < 3)
                     {
                         direction /= distance;
                         var sphere = new Vector4(start, radius);
+                        if (iteration > 0 && i > 0) state.SpatialSweeps[i] = new(start, next, radius, i, true);
                         Hit hit = default;
                         Interlocked.Increment(ref Queries);
                         if (sweep(bgModule, &hit, &sphere, &direction, distance, 1, flags) != 0
@@ -110,23 +121,50 @@ public unsafe sealed class SceneContacts
         }
         if (any)
         {
-            // Contact wins over tiny length residuals; native bone writeback preserves bone translations.
-            for (var i = 2; i < 5; i++)
+            // Explicitly unprotected roots may move. Protected nodes are never written here.
+            for (var i = 0; i < 5; i++)
             {
+                if (cfg.IsProtected(i)) continue;
                 var relative = state.Points[i] - root;
                 if (!ContactMath.Finite(relative)) return false;
                 *(Vector3*)(particles + i * 96) = relative;
                 var normal = state.Normals[i];
                 if (normal.LengthSquared() > .1f)
                 {
+                    state.ContactMask |= 1u << i;
                     var velocity = (Vector3*)(particles + i * 96 + 0x20);
                     *velocity = ContactMath.RemoveInwardVelocity(*velocity, normal) * .9f;
                 }
             }
             Interlocked.Increment(ref Contacts);
+            state.ContactAdjusted = true;
         }
-        Array.Copy(state.Points, state.Previous, 5);
+        // Length projections with no contact are not written to native particles. The next
+        // temporal sweep must start at the actual particle position, not that unused candidate.
+        for (var i = 0; i < 5; i++) state.Previous[i] = *(Vector3*)(particles + i * 96) + root;
         state.Root = root; state.Initialized = true;
         return any;
+    }
+
+    public static CollisionPreview? CapturePreview(byte* chain, State state, Settings cfg, bool sceneAvailable)
+    {
+        if (*(ushort*)(chain + 0xE8) != 5) return null;
+        var particles = *(byte**)(chain + 0x20);
+        if (particles == null) return null;
+        var root = *(Vector3*)((byte*)state.Module + 0x40);
+        if (!ContactMath.Finite(root)) return null;
+        var nodes = new NodeCollider[5];
+        var sweeps = new List<SweepShape>(4);
+        var active = sceneAvailable && (cfg.GroundCollision || cfg.SceneCollision);
+        for (var i = 0; i < 5; i++)
+        {
+            var position = *(Vector3*)(particles + i * 96) + root;
+            if (!ContactMath.Finite(position) || Vector3.DistanceSquared(position, root) > 100) return null;
+            nodes[i] = new(position, cfg.GetContactRadius(i), active && (state.ContactMask & (1u << i)) != 0, cfg.IsProtected(i));
+            if (i < 1 || nodes[i].Radius == 0) continue;
+            if (cfg.SceneCollision && sceneAvailable && state.SpatialSweeps[i] is { } observed) sweeps.Add(observed);
+            else if (!active) sweeps.Add(new(nodes[i - 1].Position, position, nodes[i].Radius, i, false));
+        }
+        return new CollisionPreview(nodes, sweeps.ToArray(), active);
     }
 }

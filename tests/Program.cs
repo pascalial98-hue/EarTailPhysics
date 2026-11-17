@@ -2,7 +2,7 @@ using System.Numerics;
 using System.Text.Json;
 using EarTailPhysics;
 
-unsafe class Program
+unsafe partial class Program
 {
     static int checks;
     static void Assert(bool ok, string why) { checks++; if (!ok) throw new Exception(why); }
@@ -64,6 +64,9 @@ unsafe class Program
         point=new(float.NaN,0,0);
         Assert(!ContactMath.ProjectPlane(ref point,Vector3.Zero,Vector3.UnitY,.04f),"Reject nonfinite contact");
         TestContacts();
+        TestProfiles();
+        TestNodeContacts();
+        TestPreviewGeometry();
         int cases=0;
         if(args.Length>0)
         {

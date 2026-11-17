@@ -14,6 +14,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void LoadDelegate(nint module, nint resource, uint slot);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate nint RefDelegate(nint resource, nint unused, int unused2);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate ushort BoneDelegate(nint skeleton, byte* name);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void PoseDelegate(nint chain, nint context);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void FinalizeDelegate(nint chain, byte fixedLength, float blend);
 
     private readonly IObjectTable objects;
@@ -21,6 +22,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
     private readonly IFramework framework;
     private readonly IPluginLog log;
     private Hook<JobDelegate>? jobHook;
+    private Hook<PoseDelegate>? poseHook;
     private Hook<FinalizeDelegate>? finalizeHook;
     private LoadDelegate? load;
     private RefDelegate? addRef, release;
@@ -34,12 +36,16 @@ public unsafe sealed class PhysicsRuntime : IDisposable
     private DescriptorBuilder? view;
     private SceneContacts.State? contactState;
     private SceneContacts? contacts;
+    private CollisionPreview? preview;
+    private bool previewVisible;
     private bool failed, disposed;
     public string Status { get; private set; } = "等待角色物理更新";
     public bool Supported { get; }
     public long Queries => contacts == null ? 0 : Interlocked.Read(ref contacts.Queries);
     public long Contacts => contacts == null ? 0 : Interlocked.Read(ref contacts.Contacts);
     public long Rebuilds { get; private set; }
+    public CollisionPreview? Preview => Volatile.Read(ref preview);
+    public void SetPreviewVisible(bool visible) => Volatile.Write(ref previewVisible, visible);
 
     public PhysicsRuntime(Settings settings, IObjectTable objects, IClientState client, IFramework framework,
         IGameInteropProvider interop, IPluginLog log)
@@ -64,19 +70,22 @@ public unsafe sealed class PhysicsRuntime : IDisposable
         try
         {
             jobHook = interop.HookFromAddress<JobDelegate>(b + 0x18B96D0, OnCreateJobs);
+            poseHook = interop.HookFromAddress<PoseDelegate>(b + 0x1BE66E0, OnPose);
             finalizeHook = interop.HookFromAddress<FinalizeDelegate>(b + 0x1BE7560, OnFinalize);
-            finalizeHook.Enable(); jobHook.Enable();
+            finalizeHook.Enable(); poseHook.Enable(); jobHook.Enable();
             framework.Update += OnFramework;
             Supported = true;
         }
-        catch { jobHook?.Dispose(); finalizeHook?.Dispose(); throw; }
+        catch { jobHook?.Dispose(); poseHook?.Dispose(); finalizeHook?.Dispose(); throw; }
     }
 
-    public void Configure(Settings value)
+    public void Configure(Settings value, bool forceRebuild = false)
     {
+        var next = value.Snapshot();
+        var rebuild = forceRebuild || failed || !Volatile.Read(ref settings).SameNativeConfiguration(next);
         failed = false;
-        Volatile.Write(ref settings, value.Snapshot());
-        Interlocked.Increment(ref generation);
+        Volatile.Write(ref settings, next);
+        if (rebuild) Interlocked.Increment(ref generation);
     }
 
     private void OnFramework(IFramework _)
@@ -141,6 +150,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
         var adopted = false;
         var held = false;
         Volatile.Write(ref contactChain, 0);
+        Volatile.Write(ref preview, null);
         try
         {
             // Hold the REAL resource before native Load releases the module's old reference.
@@ -163,7 +173,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
             currentVector = *(nint*)(module + 0xA0);
             Rebuilds++;
             contactState = null;
-            if (next.HasTail && (cfg.GroundCollision || cfg.SceneCollision))
+            if (next.HasTail)
             {
                 var begin = *(nint*)(module + 0xA0);
                 var end = *(nint*)(module + 0xA8);
@@ -194,34 +204,63 @@ public unsafe sealed class PhysicsRuntime : IDisposable
         }
     }
 
-    private void OnFinalize(nint chain, byte fixedLength, float blend)
+    private SceneContacts.State? OwnedContactState(nint chain)
     {
-        var hit = false;
-        if (!disposed && !failed && chain == Volatile.Read(ref contactChain) && contactState is { } state)
+        if (disposed || failed || chain != Volatile.Read(ref contactChain) || contactState is not { } state) return null;
+        // Validate ownership from the LIVE callback object, never a stale cached draw pointer.
+        var skeleton = *(nint*)(chain + 0x10);
+        var owner = skeleton == 0 ? 0 : *(nint*)(skeleton + 0xB8);
+        return owner != 0 && owner == Volatile.Read(ref localDraw) && *(nint*)(owner + 0x158) == state.Module ? state : null;
+    }
+
+    private void StopContacts(Exception ex)
+    {
+        Volatile.Write(ref contactChain, 0);
+        Volatile.Write(ref preview, null);
+        Status = "场景碰撞暂停：" + ex.Message;
+        log.Error(ex, "EarTailPhysics scene contact disabled after error");
+    }
+
+    private void OnPose(nint chain, nint context)
+    {
+        try
         {
-            try
+            if (OwnedContactState(chain) is { } state)
             {
-                // Validate ownership from the LIVE chain before using stored per-character state.
-                var skeleton = *(nint*)(chain + 0x10);
-                var owner = skeleton == 0 ? 0 : *(nint*)(skeleton + 0xB8);
-                if (owner != 0 && owner == Volatile.Read(ref localDraw) && *(nint*)(owner + 0x158) == state.Module)
-                    hit = contacts!.Resolve((byte*)chain, state, Volatile.Read(ref settings), Volatile.Read(ref bgModule));
-            }
-            catch (Exception ex)
-            {
-                Volatile.Write(ref contactChain, 0);
-                Status = "场景碰撞暂停：" + ex.Message;
-                log.Error(ex, "EarTailPhysics scene contact disabled after error");
+                // Keep one immutable profile across all substeps and the corresponding preview.
+                var cfg = state.FrameSettings ??= Volatile.Read(ref settings);
+                contacts!.Resolve((byte*)chain, state, cfg, Volatile.Read(ref bgModule));
             }
         }
-        // Contact projection has already constrained chain lengths. Do not immediately project
-        // the corrected nodes back through the surface; native writeback still owns bone rotations.
-        finalizeHook!.Original(chain, hit ? (byte)0 : fixedLength, blend);
+        catch (Exception ex) { StopContacts(ex); }
+        // Native pose construction consumes corrected particles, including an opted-in root.
+        // Correcting particles only in OnFinalize is too late for the native node matrices.
+        poseHook!.Original(chain, context);
+    }
+
+    private void OnFinalize(nint chain, byte fixedLength, float blend)
+    {
+        SceneContacts.State? state = null;
+        try { state = OwnedContactState(chain); }
+        catch (Exception ex) { StopContacts(ex); }
+        // Contact projection already bounded the lengths. Preserve corrected translations;
+        // native pose construction and finalization continue to own bone rotations/blending.
+        finalizeHook!.Original(chain, state?.ContactAdjusted == true ? (byte)0 : fixedLength, blend);
+        if (state == null) return;
+        try
+        {
+            var cfg = state.FrameSettings ?? Volatile.Read(ref settings);
+            Volatile.Write(ref preview, Volatile.Read(ref previewVisible) && cfg.ShowCollisionPreview
+                ? SceneContacts.CapturePreview((byte*)chain, state, cfg, Volatile.Read(ref bgModule) != 0) : null);
+        }
+        catch (Exception ex) { StopContacts(ex); }
+        finally { state.ContactAdjusted = false; state.ContactMask = 0; state.FrameSettings = null; }
     }
 
     private void Restore()
     {
         Volatile.Write(ref contactChain, 0);
+        Volatile.Write(ref preview, null);
         var actor = objects.LocalPlayer;
         if (actor == null || currentModule == 0) return;
         var draw = *(nint*)(actor.Address + 0x100);
@@ -244,8 +283,8 @@ public unsafe sealed class PhysicsRuntime : IDisposable
             catch (Exception ex) { log.Error(ex, "Restore failed; redraw the local character to restore original physics"); }
         }
         disposed = true;
-        jobHook?.Disable(); finalizeHook?.Disable();
-        jobHook?.Dispose(); finalizeHook?.Dispose();
+        jobHook?.Disable(); poseHook?.Disable(); finalizeHook?.Disable();
+        jobHook?.Dispose(); poseHook?.Dispose(); finalizeHook?.Dispose();
         view?.Dispose();
     }
 }

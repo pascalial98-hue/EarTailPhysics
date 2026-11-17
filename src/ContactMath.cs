@@ -28,4 +28,16 @@ public static class ContactMath
             if (len > 1e-6f && float.IsFinite(len)) points[i] = points[i - 1] + d * (lengths[i - 1] / len);
         }
     }
+
+    public static void KeepLengths(Vector3[] points, float[] lengths, Settings cfg)
+    {
+        for (var i = 1; i < points.Length; i++)
+        {
+            var delta = points[i] - points[i - 1];
+            var length = delta.Length();
+            if (length <= 1e-6f || !float.IsFinite(length)) continue;
+            if (!cfg.IsProtected(i)) points[i] = points[i - 1] + delta * (lengths[i - 1] / length);
+            else if (!cfg.IsProtected(i - 1)) points[i - 1] = points[i] - delta * (lengths[i - 1] / length);
+        }
+    }
 }

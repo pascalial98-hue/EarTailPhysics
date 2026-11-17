@@ -1,3 +1,15 @@
+# 0.1.1.0 — 2026-11-17
+
+- Five independently adjustable tail contact radii: root b, proximal c, middle d, rear e and virtual tip; 0 disables a node's direct terrain/scene contact.
+- Separate root and proximal protection switches, both on by default. Disabling protection allows that node to participate in projection; native attachment stability remains unverified.
+- In-game wire preview of contact spheres and link sweep capsules, with node labels, hovered-node highlighting and contact coloring. Local player only; visible while the settings window is open.
+- Radius and protection edits apply without rebuilding the native physics simulation. Existing scalar-radius settings migrate with their previous middle/rear/tip proportions.
+- Fix collision callback ordering: project before native pose construction, so corrected particles feed native node transforms. Previously projection ran too late at finalization.
+- Existing ear/tail presets, animation attraction, wind tuning and independent strength controls are unchanged. Body collisions retain their separate middle/rear presets.
+- Release build and managed tests passed; 576 local Mod parameter comparisons still pass. New tests cover all root-protection combinations, query radii, migration and preview geometry.
+
+Still an installation test release: native calls, in-game appearance, preview alignment, root stability and gameplay performance have not been validated in-game.
+
 # 0.1.0.0 — 2026-11-17
 
 First independent CN Dalamud installation test release.
