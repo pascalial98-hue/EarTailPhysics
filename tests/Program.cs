@@ -157,7 +157,13 @@ unsafe partial class Program
                 for(int i=0;i<count;i++)
                 {
                     Assert(NativeMemoryView.Name(n+i*84)==NativeMemoryView.Name(mn+i*84),"Node name");
-                    for(int f=32;f<76;f+=4)Near(*(float*)(n+i*84+f),*(float*)(mn+i*84+f),$"{name} node {i} float {f}");
+                    for(int f=32;f<76;f+=4)
+                    {
+                        var expectedValue = *(float*)(n+i*84+f);
+                        // The sole intentional 0.1.5 baseline change: ear wind is halved.
+                        if (name is "j_mimi_l" or "j_mimi_r" && i == 1 && f == 40) expectedValue *= .5f;
+                        Near(expectedValue,*(float*)(mn+i*84+f),$"{name} node {i} float {f}");
+                    }
                     Assert(*(uint*)(n+i*84+76)==*(uint*)(mn+i*84+76),"Collision mask");
                 }
             }

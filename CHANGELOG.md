@@ -1,3 +1,12 @@
+# 0.1.5.0 — 2026-11-17
+
+- Make tail idle sways, tip lifts and flicks more visible with larger target angles and longer events. Retain independent timing, quiet gaps, movement fade-out and original animation input.
+- Smoothly raise weak mid/rear/tip attraction during an idle event, capped at 0.04 unless already stronger. Restore exact targets and coefficients after every native constraint call. Preserve root/proximal anchors, passive tail presets, damping, wind and downstream collision processing.
+- Halve wind response for all four ear grades. Keep ear damping, response speed, base attraction and random ear-motion curves unchanged so movement tuning stays intact.
+- Verify bounded drive, meaningful target excursions, improved simplified weak-tail response, exact restoration and 576 Mod baseline combinations (only ear wind intentionally differs).
+
+User feedback confirms 0.1.4 ear actions were visible but tail actions were too subtle. A stone wall produced native hits and contact correction in game; other player-solid walls/columns/furniture still reportedly miss. Collision investigation is deferred at the user's request, and this release does not change collision code. New idle tuning and ear wind require in-game visual confirmation; mesh compression remains paused.
+
 # 0.1.4.0 — 2026-11-17
 
 - Add an opt-in random idle-motion switch, off by default, without rebuilding native physics when toggled.

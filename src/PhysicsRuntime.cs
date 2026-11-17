@@ -311,8 +311,9 @@ public unsafe sealed class PhysicsRuntime : IDisposable
 
     private void OnConstraints(nint chain, nint context, byte flags)
     {
-        Span<Vector3> saved = stackalloc Vector3[5];
+        Span<IdleMotionTargets.SavedTarget> saved = stackalloc IdleMotionTargets.SavedTarget[5];
         byte* particles = null;
+        byte* drivenNodes = null;
         var count = 0;
         try
         {
@@ -324,7 +325,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
                 var part = RuntimeBinding.IdleChainPart(chain, Volatile.Read(ref localDraw), Volatile.Read(ref idleBindings));
                 if ((part == IdlePart.Tail && cfg.TailStrength == 0) || ((part is IdlePart.LeftEar or IdlePart.RightEar) && !cfg.Ears))
                     part = IdlePart.None;
-                particles = IdleMotionTargets.Apply((byte*)chain, part, frame, saved, out count);
+                particles = IdleMotionTargets.Apply((byte*)chain, part, frame, saved, out drivenNodes, out count);
                 if (particles != null) Interlocked.Increment(ref idleTargetUpdates);
             }
         }
@@ -342,8 +343,8 @@ public unsafe sealed class PhysicsRuntime : IDisposable
         finally
         {
             // The audited function does not replace particle storage or write target +0x40.
-            // Restore even when the original managed delegate reports an exception.
-            IdleMotionTargets.Restore(particles, saved, count);
+            // Restore targets and temporary tail attraction even on a delegate exception.
+            IdleMotionTargets.Restore(particles, drivenNodes, saved, count);
         }
     }
 

@@ -48,7 +48,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!open) return;
         ImGui.SetNextWindowSize(new Vector2(530, 0), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("耳尾物理增强 · 0.1.4 测试版", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.Begin("耳尾物理增强 · 0.1.5 测试版", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         { ImGui.End(); return; }
         try
         {

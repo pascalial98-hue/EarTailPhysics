@@ -9,6 +9,7 @@ public sealed record IdleMotionFrame(double Time, Vector2 Middle, Vector2 Rear, 
     Vector2 LeftEar, Vector2 RightEar, string Status)
 {
     public static readonly IdleMotionFrame Empty = new(0, default, default, default, default, default, "随机小动作已关闭");
+    public float TailDrive { get; init; }
     public bool HasMotion => Middle != default || Rear != default || Tip != default || LeftEar != default || RightEar != default;
 }
 
@@ -67,28 +68,30 @@ public sealed class IdleMotion(int? seed = null)
         Advance(ears, now, earsEnabled, eligible, 1, false);
 
         var middle = Vector2.Zero; var rear = Vector2.Zero; var tip = Vector2.Zero;
+        var tailDrive = 0f;
         var left = Vector2.Zero; var right = Vector2.Zero;
         var tailScale = tailType == 1 ? .85f : tailType == 2 ? .7f : 1;
         if (tail.Kind >= 0 && weight > 0)
         {
             var t = (float)((now - tail.Start) / tail.Duration);
             var a = tail.Amplitude * weight * tailScale;
+            tailDrive = Pulse(t) * weight;
             // Values are incremental joint angles: root and proximal target stay fixed.
             switch (tail.Kind)
             {
                 case 0: // a slow side glance, then a softer return through centre
-                    middle = new(tail.Sign * .12f * Sway(t) * a, 0);
-                    rear = new(tail.Sign * .10f * Sway(t) * a, .025f * Pulse(t) * a);
-                    tip = new(tail.Sign * .07f * Sway(t) * a, .035f * Pulse(t) * a);
+                    middle = new(tail.Sign * .36f * Sway(t) * a, .09f * Pulse(t) * a);
+                    rear = new(tail.Sign * .30f * Sway(t) * a, .08f * Pulse(t) * a);
+                    tip = new(tail.Sign * .20f * Sway(t) * a, .10f * Pulse(t) * a);
                     break;
                 case 1: // lift/relax the tip, with a little movement in the rear
-                    rear = new(tail.Sign * .025f * Pulse(t) * a, .08f * Pulse(t) * a);
-                    tip = new(tail.Sign * .035f * Pulse(t) * a, .20f * Pulse(t) * a);
+                    rear = new(tail.Sign * .10f * Pulse(t) * a, .22f * Pulse(t) * a);
+                    tip = new(tail.Sign * .10f * Pulse(t) * a, .38f * Pulse(t) * a);
                     break;
                 case 2: // one brief flick; no repeated bounce train
-                    middle = new(tail.Sign * .07f * Sway(t) * a, 0);
-                    rear = new(tail.Sign * .16f * Sway(t) * a, 0);
-                    tip = new(tail.Sign * .12f * Sway(t) * a, .025f * Pulse(t) * a);
+                    middle = new(tail.Sign * .24f * Sway(t) * a, .05f * Pulse(t) * a);
+                    rear = new(tail.Sign * .40f * Sway(t) * a, .07f * Pulse(t) * a);
+                    tip = new(tail.Sign * .30f * Sway(t) * a, .10f * Pulse(t) * a);
                     break;
             }
         }
@@ -109,7 +112,7 @@ public sealed class IdleMotion(int? seed = null)
         }
         var status = !eligible ? weight > 0 ? "移动／转身，正在淡出" : "等待静止"
             : tail.Kind >= 0 || ears.Kind >= 0 ? Describe(tail.Kind, ears.Kind) : "静止中，等待下一次随机动作";
-        return new(now, middle, rear, tip, left, right, status);
+        return new(now, middle, rear, tip, left, right, status) { TailDrive = tailDrive };
     }
 
     private void Advance(Channel channel, double now, bool enabled, bool canStart, float durationScale, bool isTail)
@@ -127,7 +130,7 @@ public sealed class IdleMotion(int? seed = null)
         var kind = channel.Previous < 0 ? random.Next(3) : (channel.Previous + 1 + random.Next(2)) % 3;
         channel.Previous = channel.Kind = kind;
         channel.Start = now;
-        channel.Duration = (isTail ? kind == 0 ? 3.6f : kind == 1 ? 2.6f : 1.35f
+        channel.Duration = (isTail ? kind == 0 ? 4.8f : kind == 1 ? 3.4f : 2.1f
             : kind == 2 ? 1.6f : .65f) * durationScale * (.9f + .2f * (float)random.NextDouble());
         channel.End = now + channel.Duration;
         channel.Sign = random.Next(2) == 0 ? -1 : 1;
