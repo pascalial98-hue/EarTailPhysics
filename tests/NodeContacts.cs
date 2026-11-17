@@ -36,6 +36,7 @@ unsafe partial class Program
     {
         using var mem = new NativeMemoryView();
         var module = mem.Allocate(0x590);
+        *(Matrix4x4*)(module + 0x10) = Matrix4x4.Identity;
         var chain = mem.Allocate(0x180);
         var particles = mem.Allocate(5 * 96);
         *(ushort*)(chain + 0xE8) = 5;

@@ -47,6 +47,10 @@ public unsafe sealed class PhysicsRuntime : IDisposable
     public bool Supported { get; }
     public long Queries => contacts == null ? 0 : Interlocked.Read(ref contacts.Queries);
     public long Contacts => contacts == null ? 0 : Interlocked.Read(ref contacts.Contacts);
+    public long SceneHits => contacts == null ? 0 : Interlocked.Read(ref contacts.SceneHits);
+    public long GroundHits => contacts == null ? 0 : Interlocked.Read(ref contacts.GroundHits);
+    public long InvalidHits => contacts == null ? 0 : Interlocked.Read(ref contacts.InvalidHits);
+    public long TriangleNormals => contacts == null ? 0 : Interlocked.Read(ref contacts.TriangleNormals);
     public long Rebuilds { get; private set; }
     private long windCallbacks, jobCallbacks, localWindCallbacks, localJobCallbacks, tailPoseCallbacks;
     public long WindCallbacks => Interlocked.Read(ref windCallbacks);
@@ -60,6 +64,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
     public float TailWind { get; private set; }
     public bool TailSimulating { get; private set; }
     public string ContactStatus => contactState?.LastResult ?? "等待尾链绑定";
+    public float PoseOffset => contactState?.PoseOffset ?? float.NaN;
     public CollisionPreview? Preview => Volatile.Read(ref preview);
     public void SetPreviewVisible(bool visible) => Volatile.Write(ref previewVisible, visible);
 

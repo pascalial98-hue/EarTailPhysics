@@ -1,3 +1,14 @@
+# 0.1.3.0 — 2026-11-17
+
+- Fix collision-query and preview coordinates: native particles are in skeleton model space, not world-oriented offsets. Apply the full actor affine transform, including rotation and scale; invert it for corrected positions and velocities.
+- Measure constrained segment lengths in world space. Per-node radii remain world metres. Sanitize unused native matrix padding and reject invalid/singular transforms before querying or writing particles.
+- Handle valid mesh hits that return triangle vertices without an optional normal. Recover a normal from the returned world-space triangle; reject degenerate geometry and invalid travel distances.
+- Expose native scene/ground hits, invalid results and triangle-normal recovery separately from queries/adjusted contacts. Preview diagnostics report physical-point versus finalized animation-blend position differences without relocating query geometry.
+- Preserve the 0.1.2 takeover/wind path, all ear/tail preset coefficients, animation blending, damping and root-protection choices. No mesh compression is included.
+- Offline regression coverage includes rotated/scaled actors, transformed wall/floor response, matching query/preview coordinates, missing-normal hits, invalid results and 576 old Mod parameter comparisons.
+
+Users confirmed 0.1.2 takeover, wind and query activity, but reported zero contacts and badly displaced preview geometry. The 0.1.3 corrections have passed offline checks; actual client contact response and visual alignment still require game testing.
+
 # 0.1.2.0 — 2026-11-17
 
 - Candidate fix for remaining in waiting state with no wind, collision preview or queries: apply through the local character's native environment-wind callback as well as the existing job-creation fallback.

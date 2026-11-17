@@ -66,6 +66,7 @@ unsafe partial class Program
         TestContacts();
         TestProfiles();
         TestNodeContacts();
+        TestWorldContacts();
         TestPreviewGeometry();
         TestRuntimeBindingAndWind();
         int cases=0;
@@ -88,7 +89,7 @@ unsafe partial class Program
         using var mem=new NativeMemoryView();
         var module=mem.Allocate(0x590);var chain=mem.Allocate(0x180);var particles=mem.Allocate(5*96);
         *(ushort*)(chain+0xE8)=5;*(byte**)(chain+0x20)=particles;
-        *(Vector3*)(module+0x40)=new Vector3(100,10,-20);
+        *(Matrix4x4*)(module+0x10)=Matrix4x4.CreateTranslation(100,10,-20);
         for(int i=0;i<5;i++)
         {
             var p=new Vector3(i*.2f,i<2?.12f:-.03f,0);

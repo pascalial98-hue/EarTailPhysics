@@ -48,7 +48,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!open) return;
         ImGui.SetNextWindowSize(new Vector2(530, 0), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("耳尾物理增强 · 0.1.2 测试版", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.Begin("耳尾物理增强 · 0.1.3 测试版", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         { ImGui.End(); return; }
         try
         {
@@ -112,6 +112,10 @@ public sealed class Plugin : IDalamudPlugin
                 ImGui.TextUnformatted($"任务入口 {runtime.JobCallbacks} 次（自身 {runtime.LocalJobCallbacks}）· 已应用 {runtime.Rebuilds} 次");
                 ImGui.TextWrapped(runtime.TailStatus);
                 ImGui.TextUnformatted($"尾链更新 {runtime.TailPoseCallbacks} 次 · 原生风输入 {runtime.TailWind:F3}");
+                ImGui.TextUnformatted($"原生命中：场景 {runtime.SceneHits} · 地面 {runtime.GroundHits} · 无效结果 {runtime.InvalidHits}");
+                ImGui.TextUnformatted($"三角面法线补全 {runtime.TriangleNormals} 次");
+                if (runtime.Preview is { Fresh: true } && float.IsFinite(runtime.PoseOffset))
+                    ImGui.TextUnformatted($"物理点与动画混合位置最大偏差 {runtime.PoseOffset * 100:F1} cm");
                 ImGui.TextWrapped("风输入由游戏环境决定，不是强度档位。若仍停在等待，请记录这里的状态以便定位。");
             }
             ImGui.TextWrapped("首版仅作用于自身。支持标准尾链及猫耳骨骼；额外骨链与任意模型自动适配尚未提供。");
