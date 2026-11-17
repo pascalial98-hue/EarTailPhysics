@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+research/
+reports/
+artifacts/
+*.user
+*.pmp
+*.phyb
+*.dll
+*.pdb
