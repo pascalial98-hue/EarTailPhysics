@@ -10,7 +10,7 @@ public sealed unsafe class NativeWindState
     private readonly Entry[] entries;
     private NativeWindState(Entry[] entries) => this.entries = entries;
 
-    private static int Count(nint module, out nint begin)
+    internal static int Count(nint module, out nint begin)
     {
         begin = *(nint*)(module + 0xA0);
         var end = *(nint*)(module + 0xA8);

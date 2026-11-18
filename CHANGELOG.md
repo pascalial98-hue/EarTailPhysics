@@ -1,3 +1,10 @@
+# 0.1.7.0 — 2026-11-18
+
+- Keep the complete slot-0 descriptor installed while its simulators are live. Equipment refreshes can resolve both added ear chains.
+- Pin the original resource until the game has released its private view. Return to the original through a native reload on disable, GPose pause or plugin unload.
+- Report source, installed and runtime group counts in the diagnostics panel and rebuild log. Revert a failed adoption or unexpected count through the normal restoration path.
+- Game validation pending for gear and job changes with the YAB+ female Miqo’te layout.
+
 # 0.1.6.0 — 2026-11-17
 
 - Give fluffy/fox tails dedicated, broader idle arcs after feedback that 0.1.5 remained too subtle. Remove the 0.85 amplitude reduction; every event now includes middle-node movement and stronger pitch so upright tails respond visibly in target space.

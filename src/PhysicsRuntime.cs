@@ -15,6 +15,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void JobDelegate(nint module, nint updater);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void WindDelegate(nint controller, nint actor, nint draw, float delta, byte flags);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void LoadDelegate(nint module, nint resource, uint slot);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void UnloadDelegate(nint module, uint slot);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate nint RefDelegate(nint resource, nint unused, int unused2);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate ushort BoneDelegate(nint skeleton, byte* name);
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)] private delegate void PoseDelegate(nint chain, nint context);
@@ -36,8 +37,9 @@ public unsafe sealed class PhysicsRuntime : IDisposable
     private Hook<WindDelegate>? windHook;
     private Hook<PoseDelegate>? poseHook;
     private Hook<FinalizeDelegate>? finalizeHook;
-    private LoadDelegate? load;
-    private RefDelegate? addRef, release;
+    private Hook<LoadDelegate>? loadHook;
+    private Hook<UnloadDelegate>? unloadHook;
+    private PhysicsResourceSlots? slots;
     private BoneDelegate? findBone;
     private Settings settings;
     private int generation = 1;
@@ -69,6 +71,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
     public long TailPoseCallbacks => Interlocked.Read(ref tailPoseCallbacks);
     public bool LocalCharacterFound => Volatile.Read(ref localDraw) != 0;
     public bool SceneAvailable => Volatile.Read(ref bgModule) != 0;
+    public string GroupStatus { get; private set; } = "基础物理组等待读取";
     public string TailStatus { get; private set; } = "等待尾链绑定";
     public float TailWind { get; private set; }
     public bool TailSimulating { get; private set; }
@@ -95,9 +98,8 @@ public unsafe sealed class PhysicsRuntime : IDisposable
             return;
         }
         var b = main.BaseAddress;
-        load = Marshal.GetDelegateForFunctionPointer<LoadDelegate>(b + 0x18B9800);
-        addRef = Marshal.GetDelegateForFunctionPointer<RefDelegate>(b + 0x2FEA70);
-        release = Marshal.GetDelegateForFunctionPointer<RefDelegate>(b + 0x2FEA40);
+        var addRef = Marshal.GetDelegateForFunctionPointer<RefDelegate>(b + 0x2FEA70);
+        var release = Marshal.GetDelegateForFunctionPointer<RefDelegate>(b + 0x2FEA40);
         findBone = Marshal.GetDelegateForFunctionPointer<BoneDelegate>(b + 0x25A5B0);
         contacts = new SceneContacts(b + 0x5F1670, b + 0x5F1790);
         try
@@ -109,11 +111,16 @@ public unsafe sealed class PhysicsRuntime : IDisposable
             poseHook = interop.HookFromAddress<PoseDelegate>(b + 0x1BE66E0, OnPose);
             finalizeHook = interop.HookFromAddress<FinalizeDelegate>(b + 0x1BE7560, OnFinalize);
             constraintHook = interop.HookFromAddress<ConstraintDelegate>(b + 0x1BE6030, OnConstraints);
+            loadHook = interop.HookFromAddress<LoadDelegate>(b + 0x18B9800, (m, h, s) => slots!.GameLoad(m, h, s));
+            unloadHook = interop.HookFromAddress<UnloadDelegate>(b + 0x18BAB30, (m, s) => slots!.GameUnload(m, s));
+            slots = new PhysicsResourceSlots(h => addRef(h, 0, 0), h => release(h, 0, 0),
+                (m, h, s) => loadHook.Original(m, h, s), (m, s) => unloadHook.Original(m, s), OnDetached);
+            unloadHook.Enable(); loadHook.Enable();
             finalizeHook.Enable(); poseHook.Enable(); constraintHook.Enable(); jobHook.Enable(); windHook.Enable();
             framework.Update += OnFramework;
             Supported = true;
         }
-        catch { windHook?.Dispose(); jobHook?.Dispose(); poseHook?.Dispose(); finalizeHook?.Dispose(); constraintHook?.Dispose(); throw; }
+        catch { windHook?.Dispose(); jobHook?.Dispose(); poseHook?.Dispose(); finalizeHook?.Dispose(); constraintHook?.Dispose(); loadHook?.Dispose(); unloadHook?.Dispose(); throw; }
     }
 
     public void Configure(Settings value, bool forceRebuild = false)
@@ -128,6 +135,7 @@ public unsafe sealed class PhysicsRuntime : IDisposable
 
     private void OnFramework(IFramework _)
     {
+        if (slots?.HasRetired == true) slots.CollectRetired();
         var actor = objects.LocalPlayer;
         var draw = actor == null ? 0 : *(nint*)(actor.Address + 0x100);
         if (draw != Volatile.Read(ref localDraw)) { Interlocked.Increment(ref generation); idleMotion.Reset(); }
@@ -173,15 +181,21 @@ public unsafe sealed class PhysicsRuntime : IDisposable
         windHook!.Original(controller, actor, draw, delta, flags);
         try
         {
-            if (!disposed && !failed && module != 0 && module == currentModule) BindTail(module);
+            if (module != 0 && slots != null && !slots.IsChanging)
+            {
+                lock (slots.Gate)
+                    if (!disposed && !failed && !slots.IsChanging && module == currentModule) BindTail(module);
+            }
         }
         catch (Exception ex) { StopContacts(ex); }
     }
 
     private void ApplyAtBoundary(nint module, bool windBoundary)
     {
-        if (!disposed && !failed)
+        if (slots == null || slots.IsChanging || !RuntimeBinding.OwnsModule(module, Volatile.Read(ref localDraw), out _)) return;
+        lock (slots.Gate)
         {
+            if (disposed || failed || slots.IsChanging) return;
             try
             {
                 var draw = Volatile.Read(ref localDraw);
@@ -229,48 +243,52 @@ public unsafe sealed class PhysicsRuntime : IDisposable
     {
         if (*(uint*)(handle + 0xAC) == 0) throw new InvalidDataException("Unreferenced physics resource");
         var windState = NativeWindState.Capture(module);
-        var next = new DescriptorBuilder((byte*)handle, cfg, BoneExists(skeleton, "j_mimi_l") && BoneExists(skeleton, "j_mimi_r"));
-        var adopted = false;
-        var held = false;
-        var windTailIndex = next.HasTail ? next.TailSimulatorIndex : view?.TailSimulatorIndex ?? -1;
+        var owner = slots!;
+        var source = owner.SourceFor(module, handle);
+        var previousTail = view?.TailSimulatorIndex ?? -1;
+        ClearBindings();
+        DescriptorBuilder? next = null;
+        if (cfg.Enabled)
+        {
+            next = new DescriptorBuilder((byte*)source, cfg, BoneExists(skeleton, "j_mimi_l") && BoneExists(skeleton, "j_mimi_r"));
+            owner.Install(module, source, next);
+        }
+        else owner.Restore(module);
+
+        view = next;
+        currentModule = module; currentSkeleton = skeleton; currentHandle = *(nint*)(module + 0x190);
+        currentVector = *(nint*)(module + 0xA0);
+        currentFirstSimulator = currentVector == 0 || *(nint*)(module + 0xA8) <= currentVector ? 0 : *(nint*)currentVector;
+        windState.Restore(module, next?.HasTail == true ? next.TailSimulatorIndex : previousTail);
+        Rebuilds++;
+        contactsFailed = false;
+        BindTail(module);
+        var ears = next?.HasEars == true;
+        var tail = next?.HasTail == true;
+        Status = !cfg.Enabled ? "已恢复加载来源的原始物理" : $"已接管：耳朵 {(ears ? "✓" : "未启用／骨链不支持")} · 尾巴 {(tail ? "✓" : "原版／骨链不支持")}";
+        var sourceGroups = *(byte*)(source + 0xD0);
+        var slotGroups = *(byte*)(currentHandle + 0xD0);
+        var runtimeGroups = NativeWindState.Count(module, out _);
+        GroupStatus = $"基础物理组：来源 {sourceGroups} · 当前描述 {slotGroups} · 运行 {runtimeGroups}";
+        log.Information("EarTailPhysics rebuilt local physics: ears={Ears}, tail={Tail}, ground={Ground}, scene={Scene}, sourceGroups={Source}, slotGroups={Slot}, runtimeGroups={Runtime}",
+            ears, tail, cfg.GroundCollision, cfg.SceneCollision, sourceGroups, slotGroups, runtimeGroups);
+    }
+
+    private void ClearBindings()
+    {
         Volatile.Write(ref idleBindings, IdleMotionBindings.Empty);
         Volatile.Write(ref contactChain, 0);
         Volatile.Write(ref preview, null);
-        try
-        {
-            // Hold the REAL resource before native Load releases the module's old reference.
-            // The private descriptor is a non-owning view; its synthetic refcount never reaches zero.
-            if (addRef!(handle, 0, 0) != handle) throw new InvalidDataException("Resource identity changed");
-            held = true;
-            *(uint*)(next.Handle + 0xAC) = 1;
-            load!(module, (nint)next.Handle, 0);
-            if (*(nint*)(module + 0x190) != (nint)next.Handle)
-                throw new InvalidDataException("Native loader did not adopt descriptor");
-            // Native Load copies node/collider records. Retain the real resource for all unmodified
-            // data and EPHB references; never allow a fabricated handle to reach a native destructor.
-            *(nint*)(module + 0x190) = handle;
-            adopted = true;
-            held = false; // this reference now belongs to the module
-            var old = view;
-            view = next;
-            old?.Dispose();
-            windState.Restore(module, windTailIndex);
-            currentModule = module; currentSkeleton = skeleton; currentHandle = handle;
-            currentVector = *(nint*)(module + 0xA0);
-            currentFirstSimulator = currentVector == 0 || *(nint*)(module + 0xA8) <= currentVector ? 0 : *(nint*)currentVector;
-            Rebuilds++;
-            contactsFailed = false;
-            contactState = null;
-            BindTail(module);
-            Status = !cfg.Enabled ? "已恢复加载来源的原始物理" : $"已接管：耳朵 {(next.HasEars ? "✓" : "未启用／骨链不支持")} · 尾巴 {(next.HasTail ? "✓" : "原版／骨链不支持")}";
-            log.Information("EarTailPhysics rebuilt local physics: ears={Ears}, tail={Tail}, ground={Ground}, scene={Scene}",
-                next.HasEars, next.HasTail, cfg.GroundCollision, cfg.SceneCollision);
-        }
-        finally
-        {
-            if (held) release!(handle, 0, 0);
-            if (!adopted) next.Dispose();
-        }
+        contactState = null;
+    }
+
+    private void OnDetached(nint module)
+    {
+        if (module != currentModule) return;
+        GroupStatus = "基础物理组等待读取";
+        ClearBindings();
+        view = null;
+        currentModule = currentSkeleton = currentHandle = currentVector = currentFirstSimulator = 0;
     }
 
     private void BindTail(nint module)
@@ -405,21 +423,16 @@ public unsafe sealed class PhysicsRuntime : IDisposable
 
     private void Restore()
     {
-        Volatile.Write(ref idleBindings, IdleMotionBindings.Empty);
+        ClearBindings();
         Volatile.Write(ref idleFrame, IdleMotionFrame.Empty);
-        Volatile.Write(ref contactChain, 0);
-        Volatile.Write(ref preview, null);
-        var actor = objects.LocalPlayer;
-        if (actor == null || currentModule == 0) return;
-        var draw = *(nint*)(actor.Address + 0x100);
-        if (draw == 0 || *(nint*)(draw + 0x158) != currentModule) return;
-        if (*(nint*)(currentModule + 0x98) != currentSkeleton || *(nint*)(currentModule + 0x190) != currentHandle) return;
-        Replace(currentModule, currentSkeleton, currentHandle, new Settings { Enabled = false });
+        slots?.RestoreAll();
     }
 
     public void Dispose()
     {
         if (disposed) return;
+        if (slots != null) { lock (slots.Gate) disposed = true; }
+        else disposed = true;
         if (Supported)
         {
             framework.Update -= OnFramework;
@@ -430,9 +443,10 @@ public unsafe sealed class PhysicsRuntime : IDisposable
             }
             catch (Exception ex) { log.Error(ex, "Restore failed; redraw the local character to restore original physics"); }
         }
-        disposed = true;
         windHook?.Disable(); jobHook?.Disable(); poseHook?.Disable(); finalizeHook?.Disable(); constraintHook?.Disable();
         windHook?.Dispose(); jobHook?.Dispose(); poseHook?.Dispose(); finalizeHook?.Dispose(); constraintHook?.Dispose();
-        view?.Dispose();
+        loadHook?.Dispose(); unloadHook?.Dispose();
+        if (slots?.HasRetired == true)
+            log.Warning("A native consumer still holds a retired physics descriptor at shutdown; its backing storage remains pinned");
     }
 }

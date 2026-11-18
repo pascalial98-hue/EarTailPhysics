@@ -77,6 +77,13 @@ unsafe partial class Program
         TestPreviewGeometry();
         TestRuntimeBindingAndWind();
         TestIdleMotions();
+        TestSlotLifecycle();
+        if (args.Length > 1)
+        {
+            using var body = new FileFixture(File.ReadAllBytes(args[1]));
+            Assert(body.Handle[0xD0] == 7, "Expected seven source groups in the local body fixture");
+            CheckSlotLifecycle(body.Handle);
+        }
         int cases=0;
         if(args.Length>0)
         {

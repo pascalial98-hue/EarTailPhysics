@@ -48,7 +48,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!open) return;
         ImGui.SetNextWindowSize(new Vector2(530, 0), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("耳尾物理增强 · 0.1.6 测试版", ref open, ImGuiWindowFlags.AlwaysAutoResize))
+        if (!ImGui.Begin("耳尾物理增强 · 0.1.7 测试版", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         { ImGui.End(); return; }
         try
         {
@@ -114,6 +114,7 @@ public sealed class Plugin : IDalamudPlugin
                 ImGui.TextUnformatted($"自身角色 {(runtime.LocalCharacterFound ? "已找到" : "等待")} · 场景模块 {(runtime.SceneAvailable ? "已找到" : "等待")}");
                 ImGui.TextUnformatted($"环境风入口 {runtime.WindCallbacks} 次（自身 {runtime.LocalWindCallbacks}）");
                 ImGui.TextUnformatted($"任务入口 {runtime.JobCallbacks} 次（自身 {runtime.LocalJobCallbacks}）· 已应用 {runtime.Rebuilds} 次");
+                ImGui.TextUnformatted(runtime.GroupStatus);
                 ImGui.TextWrapped(runtime.TailStatus);
                 ImGui.TextUnformatted($"尾链更新 {runtime.TailPoseCallbacks} 次 · 原生风输入 {runtime.TailWind:F3}");
                 ImGui.TextUnformatted($"原生命中：场景 {runtime.SceneHits} · 地面 {runtime.GroundHits} · 无效结果 {runtime.InvalidHits}");
