@@ -9,10 +9,12 @@ public sealed record IdleMotionFrame(double Time, Vector2 Middle, Vector2 Rear, 
     Vector2 LeftEar, Vector2 RightEar, string Status)
 {
     public static readonly IdleMotionFrame Empty = new(0, default, default, default, default, default, "随机小动作已关闭");
+    public Vector2 Proximal { get; init; }
+    public float EarDrive { get; init; }
     public float TailDrive { get; init; }
     public float TailDriveLimit { get; init; } = .04f;
     public float TailJointLimit { get; init; } = .5f;
-    public bool HasMotion => Middle != default || Rear != default || Tip != default || LeftEar != default || RightEar != default;
+    public bool HasMotion => Proximal != default || Middle != default || Rear != default || Tip != default || LeftEar != default || RightEar != default;
 }
 
 public sealed class IdleMotion(int? seed = null)
@@ -69,8 +71,10 @@ public sealed class IdleMotion(int? seed = null)
         Advance(tail, now, tailEnabled, eligible, tailType == 1 ? 1.25f : 1, true);
         Advance(ears, now, earsEnabled, eligible, 1, false);
 
+        var proximal = Vector2.Zero;
         var middle = Vector2.Zero; var rear = Vector2.Zero; var tip = Vector2.Zero;
         var tailDrive = 0f;
+        var earDrive = 0f;
         var left = Vector2.Zero; var right = Vector2.Zero;
         var tailScale = tailType == 2 ? .7f : 1;
         if (tail.Kind >= 0 && weight > 0)
@@ -78,31 +82,33 @@ public sealed class IdleMotion(int? seed = null)
             var t = (float)((now - tail.Start) / tail.Duration);
             var a = tail.Amplitude * weight * tailScale;
             tailDrive = Pulse(t) * weight;
-            // Values are incremental joint angles: root and proximal target stay fixed.
             if (tailType == 1)
             {
-                // Thick fur hides small tip-only motion. Carry each action from the
-                // middle, and include pitch so an upright tail also visibly moves.
-                // Single smooth arcs return once, without adding an oscillation train.
-                var arc = Pulse(t) * a;
-                var rearArc = Pulse((t - .06f) / .94f) * a;
-                var tipArc = Pulse((t - .12f) / .88f) * a;
+                // Swing from the fixed attachment. Many fur cards are weighted to
+                // b/c and receive little or no motion from the last two links.
+                var lead = Pulse(t) * a;
+                var follow = Pulse((t - .07f) / .93f) * a;
+                var rearArc = Pulse((t - .13f) / .87f) * a;
+                var tipArc = Pulse((t - .19f) / .81f) * a;
                 switch (tail.Kind)
                 {
-                    case 0:
-                        middle = new(tail.Sign * .62f * arc, .28f * arc);
-                        rear = new(tail.Sign * .34f * rearArc, .20f * rearArc);
-                        tip = new(tail.Sign * .20f * tipArc, .12f * tipArc);
+                    case 0: // broad sideways sweep
+                        proximal = new(tail.Sign * .56f * lead, .24f * lead);
+                        middle = new(tail.Sign * .34f * follow, .16f * follow);
+                        rear = new(tail.Sign * .16f * rearArc, .08f * rearArc);
+                        tip = new(tail.Sign * .09f * tipArc, .05f * tipArc);
                         break;
-                    case 1:
-                        middle = new(tail.Sign * .20f * arc, .35f * arc);
-                        rear = new(tail.Sign * .10f * rearArc, .45f * rearArc);
-                        tip = new(tail.Sign * .10f * tipArc, .28f * tipArc);
+                    case 1: // lift the base, then curl the rear
+                        proximal = new(tail.Sign * .23f * lead, .48f * lead);
+                        middle = new(tail.Sign * .15f * follow, .31f * follow);
+                        rear = new(tail.Sign * .08f * rearArc, .23f * rearArc);
+                        tip = new(tail.Sign * .06f * tipArc, .16f * tipArc);
                         break;
-                    case 2:
-                        middle = new(tail.Sign * .58f * arc, .30f * arc);
-                        rear = new(tail.Sign * .38f * rearArc, .22f * rearArc);
-                        tip = new(tail.Sign * .22f * tipArc, .14f * tipArc);
+                    case 2: // a quicker sweep with a trailing tip
+                        proximal = new(tail.Sign * .48f * lead, .32f * lead);
+                        middle = new(tail.Sign * .43f * follow, .17f * follow);
+                        rear = new(tail.Sign * .20f * rearArc, .09f * rearArc);
+                        tip = new(-tail.Sign * .10f * tipArc, .06f * tipArc);
                         break;
                 }
             }
@@ -128,13 +134,14 @@ public sealed class IdleMotion(int? seed = null)
         {
             var t = (float)((now - ears.Start) / ears.Duration);
             var a = ears.Amplitude * weight;
-            var twitch = new Vector2(.17f * Pulse(t) * a, .08f * Sway(t) * a);
+            earDrive = Pulse(t) * weight;
+            var twitch = new Vector2(.36f * Pulse(t) * a, .16f * Sway(t) * a);
             switch (ears.Kind)
             {
                 case 0: left = twitch; break;
                 case 1: right = new(-twitch.X, twitch.Y); break;
                 case 2:
-                    left = new(.10f * Pulse(t) * a, -.13f * Pulse(t) * a);
+                    left = new(.20f * Pulse(t) * a, -.29f * Pulse(t) * a);
                     right = new(-left.X, left.Y);
                     break;
             }
@@ -143,8 +150,10 @@ public sealed class IdleMotion(int? seed = null)
             : tail.Kind >= 0 || ears.Kind >= 0 ? Describe(tail.Kind, ears.Kind) : "静止中，等待下一次随机动作";
         return new(now, middle, rear, tip, left, right, status)
         {
+            Proximal = proximal,
+            EarDrive = earDrive,
             TailDrive = tailDrive,
-            TailDriveLimit = tailType == 1 ? .12f : .04f,
+            TailDriveLimit = tailType == 1 ? .18f : .04f,
             TailJointLimit = tailType == 1 ? .85f : .5f,
         };
     }
@@ -165,7 +174,7 @@ public sealed class IdleMotion(int? seed = null)
         channel.Previous = channel.Kind = kind;
         channel.Start = now;
         channel.Duration = (isTail ? kind == 0 ? 4.8f : kind == 1 ? 3.4f : 2.1f
-            : kind == 2 ? 1.6f : .65f) * durationScale * (.9f + .2f * (float)random.NextDouble());
+            : kind == 2 ? 1.85f : .95f) * durationScale * (.9f + .2f * (float)random.NextDouble());
         channel.End = now + channel.Duration;
         channel.Sign = random.Next(2) == 0 ? -1 : 1;
         channel.Amplitude = .8f + .4f * (float)random.NextDouble();

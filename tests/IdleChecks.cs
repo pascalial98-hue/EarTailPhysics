@@ -23,9 +23,9 @@ unsafe partial class Program
         {
             frame = schedule.Update(100 + i / 60.0, Vector3.Zero, 0, true, true, true, 1);
             if (frame.HasMotion) foreach (var name in frame.Status.Split(" · ")) seen.Add(name);
-            Assert(Bounded(frame.Middle, frame.TailJointLimit) && Bounded(frame.Rear, frame.TailJointLimit) && Bounded(frame.Tip, frame.TailJointLimit)
-                && frame.LeftEar.Length() <= .3f && frame.RightEar.Length() <= .3f,
-                "Tail angles remain bounded and ear angles keep their previous limits");
+            Assert(Bounded(frame.Proximal, frame.TailJointLimit) && Bounded(frame.Middle, frame.TailJointLimit) && Bounded(frame.Rear, frame.TailJointLimit) && Bounded(frame.Tip, frame.TailJointLimit)
+                && Bounded(frame.LeftEar) && Bounded(frame.RightEar),
+                "Tail and ear angles stay within their scoped limits");
             Assert(float.IsFinite(frame.TailDrive) && frame.TailDrive is >= 0 and <= 1, "Tail drive has a finite smooth envelope");
         }
         foreach (var name in new[] { "尾巴慢摆", "尾尖轻挑", "尾巴轻甩", "左耳轻抖", "右耳轻抖", "双耳轻竖" })
@@ -40,7 +40,7 @@ unsafe partial class Program
             for (var i = 0; i < hz * 120; i++)
             {
                 var f = s.Update(100 + i / (double)hz, Vector3.Zero, 0, true, true, true, 1);
-                activity += (f.Middle.Length() + f.Rear.Length() + f.Tip.Length() + f.LeftEar.Length() + f.RightEar.Length()) / hz;
+                activity += (f.Proximal.Length() + f.Middle.Length() + f.Rear.Length() + f.Tip.Length() + f.LeftEar.Length() + f.RightEar.Length()) / hz;
             }
             samples.Add((s.Events, activity));
         }
@@ -79,17 +79,36 @@ unsafe partial class Program
         {
             var e = earsOnly.Update(100 + i / 60.0, Vector3.Zero, 0, true, false, true, 1);
             var t = tailOnly.Update(100 + i / 60.0, Vector3.Zero, 0, true, true, false, 2);
-            Assert(e.Middle == default && e.Rear == default && e.Tip == default && e.TailDrive == 0, "Original-tail comparison never receives idle tail motion");
-            Assert(t.LeftEar == default && t.RightEar == default, "Ear-off state never receives idle ear motion");
+            Assert(e.Proximal == default && e.Middle == default && e.Rear == default && e.Tip == default && e.TailDrive == 0, "Original-tail comparison never receives idle tail motion");
+            Assert(t.LeftEar == default && t.RightEar == default && t.EarDrive == 0, "Ear-off state never receives idle ear motion");
             sawEar |= e.HasMotion; sawTail |= t.HasMotion;
         }
         Assert(sawEar && sawTail, "Ear and tail participation remain independent");
+        TestEarExcursions();
         TestIdleTargetScope();
         TestIdleTailResponse();
         TestFluffyWholeTailMotion();
     }
 
     static bool Bounded(Vector2 v, float limit = .5f) => float.IsFinite(v.X) && float.IsFinite(v.Y) && v.Length() <= limit;
+
+    static void TestEarExcursions()
+    {
+        var schedule = new IdleMotion(10);
+        var peaks = new Dictionary<string, float>();
+        for (var i = 0; i < 60 * 120; i++)
+        {
+            var frame = schedule.Update(100 + i / 60d, default, 0, true, false, true, 1);
+            if (!frame.HasMotion) { Near(frame.EarDrive, 0, "Ear drive ends between actions"); continue; }
+            var angle = MathF.Max(frame.LeftEar.Length(), frame.RightEar.Length());
+            peaks[frame.Status] = MathF.Max(peaks.GetValueOrDefault(frame.Status), angle);
+            Assert(frame.EarDrive is > 0 and <= 1, "Active ear has bounded temporary drive");
+            if (frame.Status == "左耳轻抖") Assert(frame.RightEar == default, "Left twitch leaves the right ear alone");
+            if (frame.Status == "右耳轻抖") Assert(frame.LeftEar == default, "Right twitch leaves the left ear alone");
+        }
+        foreach (var action in new[] { "左耳轻抖", "右耳轻抖", "双耳轻竖" })
+            Assert(peaks.GetValueOrDefault(action) > .32f, "Distinct ear target excursion: " + action);
+    }
 
     static void TestIdleTargetScope()
     {
@@ -98,7 +117,7 @@ unsafe partial class Program
         *(byte**)(chain + 0x20) = particles;
         *(byte**)(chain + 0x28) = nodes;
         var frame = new IdleMotionFrame(100, new(.1f, .01f), new(.12f, .03f), new(.04f, .15f), new(.17f, .06f), new(-.13f, .07f), "test")
-            { TailDrive = .8f, TailDriveLimit = .12f, TailJointLimit = .85f };
+            { Proximal = new(.21f, .12f), EarDrive = .75f, TailDrive = .8f, TailDriveLimit = .18f, TailJointLimit = .85f };
         var saved = new IdleMotionTargets.SavedTarget[5];
         foreach (var part in new[] { IdlePart.Tail, IdlePart.LeftEar, IdlePart.RightEar })
         {
@@ -123,17 +142,20 @@ unsafe partial class Program
                     Assert(node[..0x40].SequenceEqual(before.AsSpan(i * 96, 0x40)), "Idle target leaves particle position, velocity and force untouched");
                     Assert(node[0x4C..].SequenceEqual(before.AsSpan(i * 96 + 0x4C, 20)), "Idle target leaves native coefficients and flags untouched");
                     var p = *(Vector3*)(particles + i * 96 + 0x40);
-                    if (i == 0 || part == IdlePart.Tail && i == 1) Assert(p == saved[i].Position, "Root/proximal animation anchors stay exact");
+                    if (i == 0) Assert(p == saved[i].Position, "Ear and tail attachment positions stay exact");
                     if (i > 0) Near(Vector3.Distance(p, *(Vector3*)(particles + (i - 1) * 96 + 0x40)), Vector3.Distance(saved[i].Position, saved[i - 1].Position), "Idle targets preserve segment lengths");
                     var nativeNode = new ReadOnlySpan<byte>(nodes + i * 160, 160);
-                    if (part == IdlePart.Tail && i >= 2)
+                    if (i > 0)
                     {
+                        Assert(p != saved[i].Position, "Driven link moved in this reference pose");
                         var attraction = *(float*)(nodes + i * 160 + 0x88);
-                        Assert(attraction > .09f && attraction <= .12f, "Weak fluffy tail receives bounded active drive");
+                        var expected = part == IdlePart.Tail ? frame.TailDriveLimit : .16f;
+                        var envelope = part == IdlePart.Tail ? frame.TailDrive : frame.EarDrive;
+                        Near(attraction, IdleMotionTargets.TailAttraction(saved[i].Attraction, envelope, expected), "Event-only drive");
                         Assert(nativeNode[..0x88].SequenceEqual(nodesBefore.AsSpan(i * 160, 0x88))
-                            && nativeNode[0x8C..].SequenceEqual(nodesBefore.AsSpan(i * 160 + 0x8C, 20)), "Tail drive changes only attraction, never wind, damping or rest data");
+                            && nativeNode[0x8C..].SequenceEqual(nodesBefore.AsSpan(i * 160 + 0x8C, 20)), "Idle drive changes only attraction");
                     }
-                    else Assert(nativeNode.SequenceEqual(nodesBefore.AsSpan(i * 160, 160)), "Ear and root native coefficients remain exact");
+                    else Assert(nativeNode.SequenceEqual(nodesBefore.AsSpan(i * 160, 160)), "Attachment coefficients remain exact");
                 }
                 Assert(*(Vector3*)(particles + (count - 1) * 96 + 0x40) != saved[count - 1].Position, "Idle input actually changes the intended endpoint");
                 try { throw new InvalidOperationException("simulated native delegate failure"); }
@@ -224,6 +246,7 @@ unsafe partial class Program
         // alone cannot move a vertical chain. Use the same 0.2 m segments.
         foreach (var axis in new[] { Vector3.UnitY, -Vector3.UnitZ, Vector3.UnitX })
         {
+            var proximalPeak = new Dictionary<string, float>();
             var middlePeak = new Dictionary<string, float>();
             var tipPeak = new Dictionary<string, float>();
             var schedule = new IdleMotion(142);
@@ -237,13 +260,15 @@ unsafe partial class Program
             {
                 var sample = schedule.Update(100 + i / 60.0, default, 0, true, true, false, 1);
                 if (!sample.HasMotion) { previous = ""; continue; }
-                Assert(sample.TailDriveLimit == .12f && sample.TailJointLimit == .85f, "Fluffy style selects its dedicated active-motion limits");
-                var currentSign = MathF.Sign(sample.Middle.X);
+                Assert(sample.TailDriveLimit == .18f && sample.TailJointLimit == .85f, "Fluffy style selects its dedicated active-motion limits");
+                var currentSign = MathF.Sign(sample.Proximal.X);
                 if (sample.Status == previous && currentSign != 0)
                     Assert(sign == currentSign, "Fluffy motion returns from one arc without repeated direction reversals");
                 previous = sample.Status; sign = currentSign;
                 var p = IdleMotionTargets.Apply(chain, IdlePart.Tail, sample, saved, out var driven, out var count);
                 Assert(p != null, "Every generated fluffy sample fits the native target validator");
+                var proximal = Vector3.Distance(*(Vector3*)(p + 96 + 0x40), saved[1].Position);
+                proximalPeak[sample.Status] = MathF.Max(proximalPeak.GetValueOrDefault(sample.Status), proximal);
                 var mid = Vector3.Distance(*(Vector3*)(p + 2 * 96 + 0x40), saved[2].Position);
                 var tip = Vector3.Distance(*(Vector3*)(p + 4 * 96 + 0x40), saved[4].Position);
                 middlePeak[sample.Status] = MathF.Max(middlePeak.GetValueOrDefault(sample.Status), mid);
@@ -252,7 +277,8 @@ unsafe partial class Program
             }
             foreach (var action in new[] { "尾巴慢摆", "尾尖轻挑", "尾巴轻甩" })
             {
-                Assert(middlePeak.GetValueOrDefault(action) > .035f, "Fluffy action moves the middle in every pose: " + action);
+                Assert(proximalPeak.GetValueOrDefault(action) > .045f, "The first skinned link swings in every pose: " + action);
+                Assert(middlePeak.GetValueOrDefault(action) > .09f, "Fluffy action moves the middle in every pose: " + action);
                 Assert(tipPeak.GetValueOrDefault(action) > .18f, "Fluffy action has broad endpoint travel in every pose: " + action);
             }
         }
@@ -262,14 +288,21 @@ unsafe partial class Program
             for (var i = 0; i < 60 * 30; i++)
             {
                 var sample = schedule.Update(100 + i / 60.0, default, 0, true, true, false, type);
-                Assert(sample.TailDriveLimit == .04f && sample.TailJointLimit == .5f,
+                Assert(sample.Proximal == default && sample.TailDriveLimit == .04f && sample.TailJointLimit == .5f,
                     "Short and dragon tails retain their earlier active-motion limits");
                 Assert(Bounded(sample.Middle) && Bounded(sample.Rear) && Bounded(sample.Tip), "Other styles retain previous angular limits");
             }
         }
+        var nearTarget = (Vector3*)(particles + 96 + 0x40);
+        *nearTarget = *(Vector3*)(particles + 0x40);
+        var collapsed = new IdleMotionFrame(100, new(.3f, 0), default, default, default, default, "collapsed proximal")
+            { Proximal = new(.4f, 0), TailDrive = 1, TailDriveLimit = .18f };
+        var fallback = IdleMotionTargets.Apply(chain, IdlePart.Tail, collapsed, saved, out var drivenNodes, out var fallbackCount);
+        Assert(fallback != null && !saved[1].Modified && saved[2].Modified, "A coincident proximal node keeps the rest of the tail active");
+        IdleMotionTargets.Restore(fallback, drivenNodes, saved, fallbackCount);
         var before = new ReadOnlySpan<byte>(particles, 5 * 96).ToArray();
         var invalid = new IdleMotionFrame(100, new(.2f, 0), default, default, default, default, "invalid")
-            { TailDrive = 1, TailDriveLimit = .13f };
+            { TailDrive = 1, TailDriveLimit = .19f };
         Assert(IdleMotionTargets.Apply(chain, IdlePart.Tail, invalid, saved, out _, out _) == null, "Out-of-range drive limit rejected");
         invalid = invalid with { TailDriveLimit = .12f, TailJointLimit = float.NaN };
         Assert(IdleMotionTargets.Apply(chain, IdlePart.Tail, invalid, saved, out _, out _) == null, "Nonfinite joint limit rejected");

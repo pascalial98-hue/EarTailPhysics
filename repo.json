@@ -3,11 +3,11 @@
     "Author": "pascalial98-hue",
     "Name": "耳尾物理增强 · Ear & Tail Physics",
     "InternalName": "EarTailPhysics",
-    "AssemblyVersion": "0.1.7.0",
+    "AssemblyVersion": "0.1.8.0",
     "DalamudApiLevel": 15,
     "ApplicableVersion": "any",
     "Punchline": "独立耳尾物理：保留动画、独立档位、试验性场景碰撞",
-    "Description": "独立运行的耳尾物理测试插件，无需安装物理 PMP。耳朵四档、尾巴三种风格和两档惯性可分别设置，保留游戏原动画跟随和风响应。提供默认关闭的身体、地面与场景碰撞试验。尾巴五个节点可独立调节接触半径，尾根与靠根段分别选择保护，支持碰撞体线框预览。可选随机耳尾小动作，静止时偶尔摆尾、挑尾尖或动耳，默认关闭。0.1.7 修复追加猫耳物理组后切职、换装时的描述表越界。排查页可查看来源组数、当前描述组数和运行组数。\n\n首版仅作用于自身，支持标准尾链和猫耳骨骼。测试前关闭旧耳尾物理包；自定义耳尾的外观 Mod 仍需保留。任意骨链、衣物网格和所有家具碰撞不在保证范围内。\n\n仅适配国服 2026.11.03 客户端 / Dalamud API 15；其他客户端自动停用接管。此版本尚待游戏实测，不代表已达到 Mod 的全部视觉效果。\n命令：/earphysics",
+    "Description": "独立运行的耳尾物理测试插件，无需安装物理 PMP。耳朵四档、尾巴三种风格和两档惯性可分别设置，保留游戏原动画跟随和风响应。提供默认关闭的身体、地面与场景碰撞试验。尾巴五个节点可独立调节接触半径，尾根与靠根段分别选择保护，支持碰撞体线框预览。可选随机耳尾小动作，静止时偶尔摆尾、挑尾尖或动耳，默认关闭。0.1.8 加强长毛猫尾／狐尾和猫耳的随机动作。长毛尾从靠根骨段带动整片毛层，耳朵轻抖、轻竖幅度更清楚。包含切职、换装时的耳组修复。\n\n首版仅作用于自身，支持标准尾链和猫耳骨骼。测试前关闭旧耳尾物理包；自定义耳尾的外观 Mod 仍需保留。任意骨链、衣物网格和所有家具碰撞不在保证范围内。\n\n仅适配国服 2026.11.03 客户端 / Dalamud API 15；其他客户端自动停用接管。此版本尚待游戏实测，不代表已达到 Mod 的全部视觉效果。\n命令：/earphysics",
     "RepoUrl": "https://github.com/pascalial98-hue/EarTailPhysics",
     "Tags": [
       "physics",
@@ -22,14 +22,14 @@
     "CanUnloadAsync": false,
     "LoadPriority": 0,
     "AcceptsFeedback": false,
-    "DownloadLinkInstall": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.7.0/EarTailPhysics.zip",
-    "DownloadLinkUpdate": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.7.0/EarTailPhysics.zip",
-    "DownloadLinkTesting": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.7.0/EarTailPhysics.zip",
-    "TestingAssemblyVersion": "0.1.7.0",
+    "DownloadLinkInstall": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.8.0/EarTailPhysics.zip",
+    "DownloadLinkUpdate": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.8.0/EarTailPhysics.zip",
+    "DownloadLinkTesting": "https://github.com/pascalial98-hue/EarTailPhysics/releases/download/v0.1.8.0/EarTailPhysics.zip",
+    "TestingAssemblyVersion": "0.1.8.0",
     "TestingDalamudApiLevel": 15,
     "IsHide": false,
     "IsTestingExclusive": false,
-    "LastUpdate": 1795012936,
-    "Changelog": "修复追加猫耳物理组后切职、换装或重绘自身时可能发生的崩溃。基础物理现在持有与运行实例配套的描述表，装备刷新可继续读取双耳。设置的「运行状态（排查）」显示三项组数。YAB+ 女猫使用追加双耳时预期为来源 7、当前描述 8、运行 8。"
+    "LastUpdate": 1795251623,
+    "Changelog": "长毛猫尾／狐尾的慢摆、轻挑、轻甩现在从靠身的第一段起摆，尾根位置固定，中后段错时跟随。单耳轻抖和双耳轻竖幅度更大，停留稍长。随机动作期间加强跟随，走动和转身时淡出。"
   }
 ]

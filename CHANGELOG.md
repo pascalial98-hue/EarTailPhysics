@@ -1,3 +1,9 @@
+# 0.1.8.0 — 2026-11-21
+
+- Start fluffy idle actions at the first skinned tail link, pivoting around the original attachment. Stagger the following three links. Bank an upright tail sideways during the lead swing.
+- Increase the angle and duration of single-ear flicks and paired perks. Briefly raise weak attraction on the active ear endpoint or fluffy tail links, then restore the original values after each constraint pass.
+- Offline checks cover proximal motion, ear participation, restoration and degenerate base links. The release retains the 0.1.7 equipment-slot lifecycle fix.
+
 # 0.1.7.0 — 2026-11-18
 
 - Keep the complete slot-0 descriptor installed while its simulators are live. Equipment refreshes can resolve both added ear chains.

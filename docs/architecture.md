@@ -90,6 +90,14 @@ Descriptor construction records indices for existing standard two-node `j_mimi_l
 
 Offline tests verify schedule variety, finite bounds, frame-rate stability at 30/60/144 FPS, movement/blocked-state cancellation, no catch-up bursts, independent switches, root/length preservation, complete target/coefficient restoration, unchanged other native bytes and self-only binding. Target excursions and a simplified attraction recurrence cover weak-tail response; they are not a native physics simulation. All 576 local Mod combinations are compared with idle enabled, accepting only the intentional 50% ear-wind coefficient change in 0.1.5. Ear damping, speed and base attraction remain unchanged, preserving movement tuning separately from wind. **0.1.4 ran in game: the user found ears visible and tails too subtle. The user found 0.1.5 fluffy motion still too subtle; 0.1.6 broader fluffy arcs and drive remain awaiting visual acceptance. Reduced ear-wind parameters are retained from 0.1.5.** A stone-wall contact was observed on 0.1.4, while user-reported misses on other player-solid obstacles remain deferred; no collision coverage fix is claimed.
 
+### 0.1.8 proximal swing and ear gestures
+
+The fluffy style rotates the b→c target around the original b attachment, followed by d, e and the virtual tip at 7%, 13% and 19% of event duration. The first swing axis tilts from yaw toward roll as the original base segment becomes vertical. Each joint retains its segment length. A coincident b/c pair leaves c in place and allows the remaining links to run. Short and dragon tails retain their previous first driven target at d. Contact protection continues to govern only collision projection.
+
+Single-ear flicks and paired perks use larger mirrored angles and base durations of 0.95 and 1.85 seconds. The attraction floor at the peak of a fluffy event is 0.18. An active ear endpoint uses 0.16 with its own event envelope. The constraint scope restores exactly the targets and attraction coefficients it changed. The attachment position, native animation, passive wind and damping keep their existing inputs.
+
+A local target-pose comparison skinned a known long-fur mesh with its original weights and the female Miqo’te reference skeleton. Mean vertex weight on b/c together was 73%, with no direct weight on e. Across matched first events, median fur-vertex displacement at peak increased 3.3–4.9 times. This compares ideal target poses and excludes native dynamics, game animation blending and rendering. Realized in-game motion still needs visual confirmation.
+
 ## Lifecycle and limitations
 
 - Ear/tail presets and collision modes rebuild base physics at the next owned native boundary. Changing node radii, root protection, preview or the idle-motion toggle does not rebuild or reset the native simulation. Manual reapply forces a rebuild.
